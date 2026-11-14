@@ -13,7 +13,7 @@ const localized=(s:string)=>({en:s,bn:s,ar:s});
 function normalizeCode(v:string){return v.trim().replace(/^table[-_\s]*/i,'').replace(/^T[-_\s]*/i,'').padStart(2,'0');}
 async function handle(req:Request,env:Env):Promise<Response>{
  const origin=req.headers.get('Origin');
- if(req.method==='OPTIONS')return json({ok:true},204,origin,env);
+ if(req.method==='OPTIONS'){const h=new Headers({'access-control-allow-methods':'GET,POST,OPTIONS','access-control-allow-headers':'Content-Type,Idempotency-Key'});if(origin&&env.ALLOWED_ORIGINS.split(',').map(x=>x.trim()).includes(origin)){h.set('access-control-allow-origin',origin);h.set('vary','Origin');}return new Response(null,{status:204,headers:h});}
  const url=new URL(req.url),p=url.pathname, rid=env.RESTAURANT_ID;
  if(p==='/health'&&req.method==='GET')return json({ok:true,service:'zestro-customer-api'},200,origin,env);
  if(p==='/api/catalog'&&req.method==='GET'){
@@ -69,7 +69,7 @@ async function handle(req:Request,env:Env):Promise<Response>{
    const serviceMinor=Math.round(subtotalMinor*(Number(st.serviceChargePercent)||0)/100);
    const totalMinor=subtotalMinor+deliveryFeeMinor+taxMinor+serviceMinor;
    const orderId=uid();const orderRef='ZST-'+new Date().toISOString().replace(/\D/g,'').slice(0,8)+'-'+crypto.randomUUID().slice(0,5).toUpperCase();
-   const note=JSON.stringify({customerPhone:phone,deliveryAddress:String(b.deliveryAddress||''),customerNote:String(b.notes||'').slice(0,1000),deliveryFee:deliveryFeeMinor/100,promoCode:String(b.promoCode||''),source:'customer-website'});
+   const note=JSON.stringify({customerPhone:phone,deliveryAddress:String(b.deliveryAddress||''),customerNote:String(b.notes||'').slice(0,1000),deliveryFee:deliveryFeeMinor/100,promoCode:String(b.promoCode||''),cartItems:items.map(x=>({productId:x.productId,selectedSides:rawItems.find((r:any)=>String(r.productId)===x.productId)?.selectedSides||[],specialInstructions:String(rawItems.find((r:any)=>String(r.productId)===x.productId)?.specialInstructions||'')})),source:'customer-website'});
    const key=req.headers.get('Idempotency-Key')||uid();
    try{
      await env.DB.prepare("INSERT INTO orders(id,restaurant_id,order_number,table_id,customer_name,order_type,status,subtotal_minor,tax_minor,service_charge_minor,total_minor,customer_note,idempotency_key) VALUES(?,?,?,?,?,?,'pending',?,?,?,?,?,?)").bind(orderId,rid,orderRef,table?.id||null,name,type,subtotalMinor,taxMinor,serviceMinor,totalMinor,note,key).run();
