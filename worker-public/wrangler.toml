@@ -1,0 +1,18 @@
+name = "zestro-customer-api"
+main = "src/index.ts"
+compatibility_date = "2026-11-14"
+workers_dev = true
+
+[vars]
+RESTAURANT_ID = "45291381-ba84-4e2f-a60c-1c39a119c2d7"
+ALLOWED_ORIGINS = "https://zestro-customer-website.pages.dev"
+WHATSAPP_NUMBER = "+8801601987672"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "zestro-saas-db"
+database_id = "7062f9eb-889b-46c1-87f4-03270a50b5b8"
+
+[[r2_buckets]]
+binding = "MEDIA"
+bucket_name = "zestro-media"
