@@ -12,7 +12,7 @@ const json=(data:unknown,status=200)=>new Response(JSON.stringify(data),{status,
 const fail=(message:string,status=400)=>json({error:message},status);
 const id=()=>crypto.randomUUID();
 const allowed=(env:Env)=>env.ALLOWED_ORIGINS.split(',').map(x=>x.trim()).filter(Boolean);
-function withCors(response:Response,origin:string|null,env:Env){const h=new Headers(response.headers);if(origin&&allowed(env).includes(origin)){h.set('access-control-allow-origin',origin);h.set('vary','Origin');h.set('access-control-allow-credentials','true');}h.set('access-control-allow-methods','GET,POST,PATCH,DELETE,OPTIONS');h.set('access-control-allow-headers','Content-Type');h.set('x-content-type-options','nosniff');h.set('referrer-policy','strict-origin-when-cross-origin');return new Response(response.body,{status:response.status,headers:h});}
+function withCors(response:Response,origin:string|null,env:Env){const h=new Headers(response.headers);if(origin&&allowed(env).includes(origin)){h.set('access-control-allow-origin',origin);h.set('vary','Origin');h.set('access-control-allow-credentials','true');}h.set('access-control-allow-methods','GET,POST,PATCH,DELETE,OPTIONS');h.set('access-control-allow-headers','Content-Type,x-file-name');h.set('x-content-type-options','nosniff');h.set('referrer-policy','strict-origin-when-cross-origin');return new Response(response.body,{status:response.status,headers:h});}
 async function authenticate(req:Request,env:Env):Promise<Member|null>{
   const token=req.headers.get('Cf-Access-Jwt-Assertion'); if(!token||!env.ACCESS_TEAM_DOMAIN||!env.ACCESS_AUD||env.ACCESS_AUD.startsWith('replace-'))return null;
   try{
@@ -34,6 +34,88 @@ async function route(req:Request,env:Env):Promise<Response>{
  if(!path.startsWith('/api/'))return fail('Not found',404);
  const member=await authenticate(req,env);if(!member)return fail('Authentication required',401);
  if(path==='/api/me'&&req.method==='GET')return json({user:{id:member.id,email:member.email,name:member.display_name,role:member.role},restaurant:{id:member.restaurant_id,name:member.restaurant_name}});
+
+ if(path==='/api/categories'&&req.method==='GET'){
+  const rows=await env.DB.prepare('SELECT id,name,slug,description,sort_order AS sortOrder,active FROM menu_categories WHERE restaurant_id=? ORDER BY sort_order,name').bind(member.restaurant_id).all<any>();
+  return json(rows.results.map((x:any)=>({...x,active:Boolean(x.active)})));
+ }
+ if(path==='/api/categories'&&req.method==='POST'){
+  if(!canWrite(member))return fail('Insufficient permissions',403);
+  const b=await req.json<Record<string,unknown>>(),name=String(b.name||'').trim();
+  if(!name)return fail('Category name is required');
+  const categoryId=id(),slug=String(b.slug||name.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')||categoryId).slice(0,80);
+  await env.DB.prepare('INSERT INTO menu_categories(id,restaurant_id,name,slug,description,sort_order,active) VALUES(?,?,?,?,?,?,?)').bind(categoryId,member.restaurant_id,name,slug,String(b.description||''),Math.max(0,Number(b.sortOrder)||0),b.active===false?0:1).run();
+  await audit(env,member,'menu.category.created','menu_category',categoryId);return json({id:categoryId},201);
+ }
+ const categoryMatch=path.match(/^\\/api\\/categories\\/([a-f0-9-]+)$/i);
+ if(categoryMatch&&req.method==='PATCH'){
+  if(!canWrite(member))return fail('Insufficient permissions',403);
+  const b=await req.json<Record<string,unknown>>(),categoryId=categoryMatch[1];
+  const old=await env.DB.prepare('SELECT id FROM menu_categories WHERE id=? AND restaurant_id=?').bind(categoryId,member.restaurant_id).first();if(!old)return fail('Category not found',404);
+  const name=b.name===undefined?null:String(b.name).trim(),slug=b.slug===undefined?null:String(b.slug),desc=b.description===undefined?null:String(b.description);
+  await env.DB.prepare('UPDATE menu_categories SET name=COALESCE(?,name),slug=COALESCE(?,slug),description=COALESCE(?,description),sort_order=COALESCE(?,sort_order),active=COALESCE(?,active),updated_at=CURRENT_TIMESTAMP WHERE id=? AND restaurant_id=?').bind(name,slug,desc,b.sortOrder===undefined?null:Number(b.sortOrder),b.active===undefined?null:(b.active?1:0),categoryId,member.restaurant_id).run();
+  await audit(env,member,'menu.category.updated','menu_category',categoryId);return json({ok:true});
+ }
+ if(categoryMatch&&req.method==='DELETE'){
+  if(!canWrite(member))return fail('Insufficient permissions',403);
+  const result=await env.DB.prepare('DELETE FROM menu_categories WHERE id=? AND restaurant_id=?').bind(categoryMatch[1],member.restaurant_id).run();if(!result.meta.changes)return fail('Category not found',404);
+  await audit(env,member,'menu.category.deleted','menu_category',categoryMatch[1]);return json({ok:true});
+ }
+ if(path==='/api/orders'&&req.method==='GET'){
+  const rows=await env.DB.prepare("SELECT o.*,t.table_code FROM orders o LEFT JOIN restaurant_tables t ON t.id=o.table_id WHERE o.restaurant_id=? ORDER BY o.created_at DESC LIMIT 200").bind(member.restaurant_id).all<any>();
+  const result=[] as any[];
+  for(const o of rows.results){
+   const lines=await env.DB.prepare('SELECT menu_item_id,item_name_snapshot,quantity,unit_price_minor FROM order_items WHERE order_id=? AND restaurant_id=?').bind(o.id,member.restaurant_id).all<any>();
+   let note:any={};try{note=JSON.parse(o.customer_note||'{}')}catch{}
+   const statusMap:any={pending:'Pending',accepted:'Preparing',preparing:'Preparing',ready:'Ready',served:'Served',cancelled:'Cancelled'};
+   result.push({id:o.id,orderNumber:o.order_number,tableNumber:o.table_code?String(o.table_code).replace(/^T[-_]?/i,''):'Pickup',customerName:o.customer_name,orderType:o.order_type==='dine_in'?'Dine-In':o.order_type==='delivery'?'Delivery':'Takeaway',items:lines.results.map((x:any)=>({menuItemId:x.menu_item_id||'',name:x.item_name_snapshot,quantity:x.quantity,unitPrice:Number(x.unit_price_minor)/100})),subtotal:Number(o.subtotal_minor)/100,tax:Number(o.tax_minor)/100,serviceCharge:Number(o.service_charge_minor)/100,total:Number(o.total_minor)/100,status:statusMap[o.status]||'Pending',notes:note.customerNote||'',createdAt:o.created_at});
+  }
+  return json(result);
+ }
+ const orderMatch=path.match(/^\\/api\\/orders\\/([a-f0-9-]+)$/i);
+ if(orderMatch&&req.method==='PATCH'){
+  if(!canWrite(member))return fail('Insufficient permissions',403);
+  const b=await req.json<Record<string,unknown>>(),map:any={Pending:'pending',Preparing:'preparing',Ready:'ready',Served:'served',Cancelled:'cancelled',pending:'pending',preparing:'preparing',ready:'ready',served:'served',cancelled:'cancelled'};
+  const status=map[String(b.status||'')];if(!status)return fail('Invalid order status');
+  const result=await env.DB.prepare('UPDATE orders SET status=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND restaurant_id=?').bind(status,orderMatch[1],member.restaurant_id).run();if(!result.meta.changes)return fail('Order not found',404);
+  await audit(env,member,'order.status.updated','order',orderMatch[1]);return json({ok:true});
+ }
+ if(path==='/api/tables'&&req.method==='GET'){
+  const rows=await env.DB.prepare('SELECT id,table_code AS number,zone,capacity,status FROM restaurant_tables WHERE restaurant_id=? ORDER BY table_code').bind(member.restaurant_id).all<any>();
+  return json(rows.results.map((x:any)=>({id:x.id,number:x.number,zone:x.zone,capacity:x.capacity,status:x.status==='occupied'?'Occupied':x.status==='reserved'?'Reserved':x.status==='cleaning'?'Cleaning':'Available',qrPath:'/?table='+encodeURIComponent(String(x.number).replace(/^T[-_]?/i,''))})));
+ }
+ if(path==='/api/tables'&&req.method==='POST'){
+  if(!canWrite(member))return fail('Insufficient permissions',403);
+  const b=await req.json<Record<string,unknown>>(),number=String(b.number||'').trim();if(!number)return fail('Table number is required');
+  const tableId=id(),status=String(b.status||'Available').toLowerCase();
+  const allowedStatus:any={available:'available',occupied:'occupied',reserved:'reserved',cleaning:'cleaning'};
+  await env.DB.prepare('INSERT INTO restaurant_tables(id,restaurant_id,table_code,zone,capacity,status) VALUES(?,?,?,?,?,?)').bind(tableId,member.restaurant_id,number,String(b.zone||'Main Dining'),Math.max(1,Number(b.capacity)||2),allowedStatus[status]||'available').run();
+  await audit(env,member,'table.created','restaurant_table',tableId);return json({id:tableId},201);
+ }
+ const tableMatch=path.match(/^\\/api\\/tables\\/([a-f0-9-]+)$/i);
+ if(tableMatch&&req.method==='PATCH'){
+  if(!canWrite(member))return fail('Insufficient permissions',403);
+  const b=await req.json<Record<string,unknown>>(),status=String(b.status||'Available').toLowerCase(),allowedStatus:any={available:'available',occupied:'occupied',reserved:'reserved',cleaning:'cleaning'};
+  const result=await env.DB.prepare('UPDATE restaurant_tables SET table_code=COALESCE(?,table_code),zone=COALESCE(?,zone),capacity=COALESCE(?,capacity),status=COALESCE(?,status),updated_at=CURRENT_TIMESTAMP WHERE id=? AND restaurant_id=?').bind(b.number===undefined?null:String(b.number),b.zone===undefined?null:String(b.zone),b.capacity===undefined?null:Math.max(1,Number(b.capacity)||2),b.status===undefined?null:(allowedStatus[status]||'available'),tableMatch[1],member.restaurant_id).run();if(!result.meta.changes)return fail('Table not found',404);
+  await audit(env,member,'table.updated','restaurant_table',tableMatch[1]);return json({ok:true});
+ }
+ if(tableMatch&&req.method==='DELETE'){
+  if(!canWrite(member))return fail('Insufficient permissions',403);
+  const result=await env.DB.prepare('DELETE FROM restaurant_tables WHERE id=? AND restaurant_id=?').bind(tableMatch[1],member.restaurant_id).run();if(!result.meta.changes)return fail('Table not found',404);
+  await audit(env,member,'table.deleted','restaurant_table',tableMatch[1]);return json({ok:true});
+ }
+ if(path==='/api/waiter-calls'&&req.method==='GET'){
+  const rows=await env.DB.prepare('SELECT w.id,w.request_type,w.note,w.status,w.created_at,t.table_code FROM waiter_calls w LEFT JOIN restaurant_tables t ON t.id=w.table_id WHERE w.restaurant_id=? ORDER BY w.created_at DESC LIMIT 200').bind(member.restaurant_id).all<any>();
+  return json(rows.results.map((x:any)=>({id:x.id,tableNumber:x.table_code?String(x.table_code).replace(/^T[-_]?/i,''):'?',requestType:x.request_type,note:x.note,status:x.status==='acknowledged'?'Acknowledged':x.status==='resolved'?'Resolved':'Incoming',createdAt:x.created_at})));
+ }
+ const waiterMatch=path.match(/^\\/api\\/waiter-calls\\/([a-f0-9-]+)$/i);
+ if(waiterMatch&&req.method==='PATCH'){
+  if(!canWrite(member))return fail('Insufficient permissions',403);
+  const b=await req.json<Record<string,unknown>>(),status=String(b.status||'').toLowerCase(),map:any={incoming:'incoming',acknowledged:'acknowledged',resolved:'resolved'};
+  if(!map[status])return fail('Invalid waiter-call status');
+  const result=await env.DB.prepare('UPDATE waiter_calls SET status=?,resolved_at=CASE WHEN ?=\'resolved\' THEN CURRENT_TIMESTAMP ELSE resolved_at END WHERE id=? AND restaurant_id=?').bind(map[status],map[status],waiterMatch[1],member.restaurant_id).run();if(!result.meta.changes)return fail('Waiter call not found',404);
+  await audit(env,member,'waiter_call.status.updated','waiter_call',waiterMatch[1]);return json({ok:true});
+ }
  if(path==='/api/menu'&&req.method==='GET'){
   const rows=await env.DB.prepare('SELECT id,category_id AS categoryId,name,description,price_minor AS priceMinor,image_key AS imageKey,available,featured,prep_minutes AS prepMinutes FROM menu_items WHERE restaurant_id=? ORDER BY created_at DESC').bind(member.restaurant_id).all();return json(rows.results);
  }
