@@ -174,11 +174,11 @@ export const SettingsModule: React.FC<{
               <Cloud className="h-5 w-5 text-[#D7A65A]" /> Cloudflare API Configuration
             </h2>
             <Badge variant={endpointStatus.configured ? 'gold' : 'neutral'}>
-              {endpointStatus.configured ? 'URL configured' : 'Demo mode'}
+              API deployed — partial
             </Badge>
           </div>
           <p className="text-xs text-[#F3EBDD]/65">
-            This build currently runs in local demo mode. Saving a Worker URL does not connect the database or verify the service. The production API, D1 schema, R2 upload flow and server-side authentication still need to be deployed. Keep all private keys in Cloudflare Worker secrets.
+            The Cloudflare Admin API, D1 database, R2 bucket and Access authentication are deployed. Menu, categories, orders, tables and waiter-call records use the cloud database. Restaurant settings, staff, promotions, homepage content, gallery and some media-library actions are not yet connected to database persistence; changes in those sections may remain in this browser only. Do not treat those sections as production-ready. Keep private keys in Worker secrets.
           </p>
           <div>
             <label className="mb-1.5 block text-xs font-medium text-[#F3EBDD]/75">

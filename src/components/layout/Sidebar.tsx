@@ -135,11 +135,11 @@ export const Sidebar: React.FC<{
       <div className="border-t border-[#2C3D34] p-4">
         <div className="rounded-xl border border-[#2C3D34] bg-[#1D2922] p-3">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold tracking-wide text-[#F3EBDD]">DEMO WORKSPACE</span>
+            <span className="text-xs font-semibold tracking-wide text-[#F3EBDD]">LIVE API — PARTIAL</span>
             <span className="h-2 w-2 rounded-full bg-[#D7A65A]" />
           </div>
           <p className="mt-1 text-[11px] text-[#F3EBDD]/55">
-            Changes save in this browser. Cloud backend not connected.
+            Orders, menu, categories and tables use the cloud API. Settings, staff, promotions, homepage and gallery still need database integration.
           </p>
         </div>
       </div>
