@@ -35,7 +35,6 @@ export const OverviewModule: React.FC<{
   });
   const weeklyRevenue = recentOrders.reduce((sum, o) => sum + o.total, 0);
   const todayOrderRevenue = validOrders.reduce((sum, o) => sum + o.total, 0);
-  const occupancy = tables.length ? Math.round((occupiedTables / tables.length) * 100) : 0;
   const revenueSeries = Array.from({ length: 7 }, (_, index) => {
     const day = new Date(sevenDaysAgo);
     day.setDate(sevenDaysAgo.getDate() + index);
@@ -52,6 +51,7 @@ export const OverviewModule: React.FC<{
   });
   const activeOrders = orders.filter((o) => o.status === 'Pending' || o.status === 'Preparing' || o.status === 'Ready').length;
   const occupiedTables = tables.filter((t) => t.status === 'Occupied').length;
+  const occupancy = tables.length ? Math.round((occupiedTables / tables.length) * 100) : 0;
   const incomingCalls = waiterCalls.filter((w) => w.status === 'Incoming').length;
 
   const popularDishes = [...menuItems].sort((a, b) => b.ordersCount - a.ordersCount).slice(0, 4);
