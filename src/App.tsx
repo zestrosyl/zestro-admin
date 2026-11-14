@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { usePersistentState } from './hooks/usePersistentState';
 import { adminApi } from './services/liveApi';
 import {
-  INITIAL_ACTIVITY,
   INITIAL_GALLERY_PHOTOS,
   INITIAL_HOMEPAGE_CONFIG,
   INITIAL_MEDIA_ASSETS,
@@ -62,7 +61,7 @@ export function App() {
   const [promotions, setPromotions] = usePersistentState<Promotion[]>('promotions', INITIAL_PROMOTIONS);
   const [staff, setStaff] = usePersistentState<StaffMember[]>('staff', INITIAL_STAFF);
   const [settings, setSettings] = usePersistentState<RestaurantSettings>('settings', INITIAL_SETTINGS);
-  const [activities, setActivities] = usePersistentState<ActivityEvent[]>('activity', INITIAL_ACTIVITY);
+  const [activities, setActivities] = useState<ActivityEvent[]>([]);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
   const notify = (message: string, tone: ToastMessage['tone'] = 'success') => {
@@ -79,30 +78,37 @@ export function App() {
 
   useEffect(() => {
     let active = true;
+    // Never show persisted sample activity while the live account is loading.
+    setActivities([]);
     (async () => {
       try {
         await adminApi('/api/me');
-        const [menu, cats, liveOrders, liveTables, liveCalls] = await Promise.all([
-          adminApi<any[]>('/api/menu'),
-          adminApi<any[]>('/api/categories'),
-          adminApi<any[]>('/api/orders'),
-          adminApi<any[]>('/api/tables'),
-          adminApi<any[]>('/api/waiter-calls'),
-        ]);
         if (!active) return;
-        setMenuItems(menu.map((x) => ({
-          id: x.id, name: x.name, categoryId: x.categoryId || '', price: Number(x.priceMinor || 0) / 100,
-          description: x.description || '', imageUrl: '', available: Boolean(x.available), featured: Boolean(x.featured),
-          prepMinutes: Number(x.prepMinutes || 0), dietaryTags: Array.isArray(x.dietaryTags) ? x.dietaryTags : [], ordersCount: 0,
-        })));
-        setCategories(cats.map((x) => ({...x, active:Boolean(x.active), sortOrder:Number(x.sortOrder)||0})));
-        setOrders(liveOrders);
-        setTables(liveTables);
-        setWaiterCalls(liveCalls);
+        const endpoints = [
+          ['/api/menu', setMenuItems, (rows: any[]) => rows.map((x) => ({
+            id: x.id, name: x.name, categoryId: x.categoryId || '', price: Number(x.priceMinor || 0) / 100,
+            description: x.description || '', imageUrl: '', available: Boolean(x.available), featured: Boolean(x.featured),
+            prepMinutes: Number(x.prepMinutes || 0), dietaryTags: Array.isArray(x.dietaryTags) ? x.dietaryTags : [], ordersCount: 0,
+          }))],
+          ['/api/categories', setCategories, (rows: any[]) => rows.map((x) => ({...x, active:Boolean(x.active), sortOrder:Number(x.sortOrder)||0}))],
+          ['/api/orders', setOrders, (rows: any[]) => rows],
+          ['/api/tables', setTables, (rows: any[]) => rows],
+          ['/api/waiter-calls', setWaiterCalls, (rows: any[]) => rows],
+        ] as const;
+        const results = await Promise.allSettled(endpoints.map(([path]) => adminApi<any[]>(path)));
+        if (!active) return;
+        results.forEach((result, index) => {
+          if (result.status === 'fulfilled') {
+            const [, setter, transform] = endpoints[index];
+            (setter as (value: any) => void)(transform(result.value));
+          } else {
+            const reason = result.reason;
+            notify(reason instanceof Error ? reason.message : `Unable to load ${endpoints[index][0]}`, 'warning');
+          }
+        });
         setSettings((prev) => ({...prev, websiteUrl: prev.websiteUrl || 'https://zestro-customer-website.pages.dev', workerApiBaseUrl: 'https://zestro-admin-api.zestro-syl.workers.dev'}));
-        setActivities([]);
       } catch (error) {
-        if (active) notify(error instanceof Error ? error.message : 'Unable to connect to the live ZESTRO backend.', 'warning');
+        if (active) notify(error instanceof Error ? error.message : 'Admin authentication failed. Sign in again and refresh.', 'warning');
       }
     })();
     return () => { active = false; };
