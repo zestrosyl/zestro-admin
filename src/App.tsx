@@ -3,17 +3,12 @@ import { usePersistentState } from './hooks/usePersistentState';
 import { adminApi } from './services/liveApi';
 import {
   INITIAL_ACTIVITY,
-  INITIAL_CATEGORIES,
   INITIAL_GALLERY_PHOTOS,
   INITIAL_HOMEPAGE_CONFIG,
   INITIAL_MEDIA_ASSETS,
-  INITIAL_MENU_ITEMS,
-  INITIAL_ORDERS,
   INITIAL_PROMOTIONS,
   INITIAL_SETTINGS,
   INITIAL_STAFF,
-  INITIAL_TABLES,
-  INITIAL_WAITER_CALLS,
 } from './data/mockData';
 import {
   ActivityEvent,
