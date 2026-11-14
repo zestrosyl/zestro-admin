@@ -1,0 +1,19 @@
+name = "zestro-admin-api"
+main = "src/index.ts"
+compatibility_date = "2026-11-14"
+workers_dev = true
+
+[vars]
+ALLOWED_ORIGINS = "https://admin.zestro.example"
+ACCESS_TEAM_DOMAIN = "your-team.cloudflareaccess.com"
+ACCESS_AUD = "replace-with-your-cloudflare-access-application-aud"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "zestro-production"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+migrations_dir = "migrations"
+
+[[r2_buckets]]
+binding = "MEDIA"
+bucket_name = "zestro-media"
