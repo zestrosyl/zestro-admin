@@ -4,14 +4,14 @@ compatibility_date = "2026-11-14"
 workers_dev = true
 
 [vars]
-ALLOWED_ORIGINS = "https://admin.zestro.example"
-ACCESS_TEAM_DOMAIN = "your-team.cloudflareaccess.com"
-ACCESS_AUD = "replace-with-your-cloudflare-access-application-aud"
+ALLOWED_ORIGINS = "https://zestro-admin.pages.dev"
+ACCESS_TEAM_DOMAIN = "icy-wave-d29d.cloudflareaccess.com"
+ACCESS_AUD = "f8f77ba37572eeff2d28993fa9d1eadb913fc3a6b4f7dd957c954038eb51e65c"
 
 [[d1_databases]]
 binding = "DB"
-database_name = "zestro-production"
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+database_name = "zestro-saas-db"
+database_id = "7062f9eb-889b-46c1-87f4-03270a50b5b8"
 migrations_dir = "migrations"
 
 [[r2_buckets]]
