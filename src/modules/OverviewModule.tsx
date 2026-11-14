@@ -10,7 +10,6 @@ import {
   ArrowUpRight,
 } from 'lucide-react';
 import { ActivityEvent, MenuItem, ModuleId, Order, RestaurantTable, WaiterCall } from '../types';
-import { REVENUE_SERIES_7D } from '../data/mockData';
 import { Badge, StatCard } from '../components/ui/Primitives';
 import { formatCurrency } from '../services/api';
 
@@ -25,31 +24,53 @@ export const OverviewModule: React.FC<{
 }> = ({ orders, menuItems, currency, tables, waiterCalls, activities, onNavigate }) => {
   const [chartMetric, setChartMetric] = useState<'revenue' | 'orders'>('revenue');
 
-  const todayOrderRevenue = orders
-    .filter((o) => o.status !== 'Cancelled')
-    .reduce((sum, o) => sum + o.total, 0);
-  const weeklyRevenue = REVENUE_SERIES_7D.reduce((s, d) => s + d.revenue, 0) + todayOrderRevenue;
+  const now = new Date();
+  const sevenDaysAgo = new Date(now);
+  sevenDaysAgo.setDate(now.getDate() - 6);
+  sevenDaysAgo.setHours(0, 0, 0, 0);
+  const validOrders = orders.filter((o) => o.status !== 'Cancelled');
+  const recentOrders = validOrders.filter((o) => {
+    const created = new Date(o.createdAt);
+    return Number.isFinite(created.getTime()) && created >= sevenDaysAgo && created <= now;
+  });
+  const weeklyRevenue = recentOrders.reduce((sum, o) => sum + o.total, 0);
+  const todayOrderRevenue = validOrders.reduce((sum, o) => sum + o.total, 0);
+  const occupancy = tables.length ? Math.round((occupiedTables / tables.length) * 100) : 0;
+  const revenueSeries = Array.from({ length: 7 }, (_, index) => {
+    const day = new Date(sevenDaysAgo);
+    day.setDate(sevenDaysAgo.getDate() + index);
+    const key = day.toLocaleDateString('en-CA');
+    const dayOrders = recentOrders.filter((o) => {
+      const created = new Date(o.createdAt);
+      return Number.isFinite(created.getTime()) && created.toLocaleDateString('en-CA') === key;
+    });
+    return {
+      label: day.toLocaleDateString(undefined, { weekday: 'short' }),
+      revenue: dayOrders.reduce((sum, o) => sum + o.total, 0),
+      orders: dayOrders.length,
+    };
+  });
   const activeOrders = orders.filter((o) => o.status === 'Pending' || o.status === 'Preparing' || o.status === 'Ready').length;
   const occupiedTables = tables.filter((t) => t.status === 'Occupied').length;
   const incomingCalls = waiterCalls.filter((w) => w.status === 'Incoming').length;
 
   const popularDishes = [...menuItems].sort((a, b) => b.ordersCount - a.ordersCount).slice(0, 4);
   const maxVal = Math.max(
-    ...REVENUE_SERIES_7D.map((d) => (chartMetric === 'revenue' ? d.revenue : d.orders)),
+    ...revenueSeries.map((d) => (chartMetric === 'revenue' ? d.revenue : d.orders)),
     1
   );
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#D7A65A]/20 bg-[#D7A65A]/[0.06] px-4 py-3">
-        <p className="text-xs text-[#F3EBDD]/70">You are viewing seeded sample analytics. Connect the backend before using these figures for business decisions.</p>
-        <Badge variant="gold">Demo data</Badge>
+        <p className="text-xs text-[#F3EBDD]/70">Live figures from your restaurant database. No sample analytics are included.</p>
+        <Badge variant="emerald">Live database</Badge>
       </div>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
           title="Weekly Revenue"
           value={formatCurrency(weeklyRevenue, currency)}
-          delta="+14.2%"
+          delta={`${recentOrders.length} orders`}
           subtitle="vs. prior 7 days"
           icon={<DollarSign className="h-5 w-5" />}
         />
@@ -63,7 +84,7 @@ export const OverviewModule: React.FC<{
         <StatCard
           title="Guests Seated"
           value={`${occupiedTables}/${tables.length} Tables`}
-          delta="68% occupancy"
+          delta={`${occupancy}% occupancy`}
           subtitle="evening service"
           icon={<Users className="h-5 w-5" />}
         />
@@ -103,7 +124,7 @@ export const OverviewModule: React.FC<{
           </div>
 
           <div className="mt-6 flex h-56 items-end justify-between gap-2 sm:gap-4">
-            {REVENUE_SERIES_7D.map((d) => {
+            {revenueSeries.map((d) => {
               const val = chartMetric === 'revenue' ? d.revenue : d.orders;
               const pct = Math.max(12, Math.round((val / maxVal) * 100));
               return (
