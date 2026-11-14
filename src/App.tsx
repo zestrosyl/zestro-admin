@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { usePersistentState } from './hooks/usePersistentState';
 import {
   INITIAL_ACTIVITY,
