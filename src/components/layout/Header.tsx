@@ -1,5 +1,5 @@
 import React from 'react';
-import { Menu, BellRing, Plus, Search } from 'lucide-react';
+import { Menu, BellRing, Plus, Search, RefreshCw } from 'lucide-react';
 import { ModuleId } from '../../types';
 import { NAV_ITEMS } from './Sidebar';
 
@@ -9,6 +9,9 @@ export const Header: React.FC<{
   incomingWaiterCallsCount: number;
   onJumpToWaiterCalls: () => void;
   onQuickAddMenu: () => void;
+  canManageCatalog?: boolean;
+  onRefresh?: () => void;
+  refreshing?: boolean;
   globalSearch: string;
   onGlobalSearchChange: (value: string) => void;
 }> = ({
@@ -17,6 +20,9 @@ export const Header: React.FC<{
   incomingWaiterCallsCount,
   onJumpToWaiterCalls,
   onQuickAddMenu,
+  canManageCatalog = true,
+  onRefresh,
+  refreshing = false,
   globalSearch,
   onGlobalSearchChange,
 }) => {
@@ -55,6 +61,19 @@ export const Header: React.FC<{
           />
         </div>
 
+        {onRefresh && (
+          <button
+            type="button"
+            onClick={onRefresh}
+            disabled={refreshing}
+            title="Sync with live database"
+            className="flex items-center gap-1.5 rounded-xl border border-[#2C3D34] bg-[#1D2922] px-3 py-2 text-xs font-medium text-[#F3EBDD] transition hover:border-[#D7A65A]/50 disabled:opacity-50"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 text-[#D7A65A] ${refreshing ? 'animate-spin' : ''}`} />
+            <span className="hidden xl:inline">Sync</span>
+          </button>
+        )}
+
         <button
           type="button"
           onClick={onJumpToWaiterCalls}
@@ -69,14 +88,16 @@ export const Header: React.FC<{
           )}
         </button>
 
-        <button
-          type="button"
-          onClick={onQuickAddMenu}
-          className="flex items-center gap-1.5 rounded-xl bg-[#D7A65A] px-3.5 py-2 text-xs font-semibold text-[#101B17] transition hover:bg-[#e3b772]"
-        >
-          <Plus className="h-4 w-4" />
-          <span className="hidden sm:inline">Add Dish</span>
-        </button>
+        {canManageCatalog && (
+          <button
+            type="button"
+            onClick={onQuickAddMenu}
+            className="flex items-center gap-1.5 rounded-xl bg-[#D7A65A] px-3.5 py-2 text-xs font-semibold text-[#101B17] transition hover:bg-[#e3b772]"
+          >
+            <Plus className="h-4 w-4" />
+            <span className="hidden sm:inline">Add Dish</span>
+          </button>
+        )}
       </div>
     </header>
   );

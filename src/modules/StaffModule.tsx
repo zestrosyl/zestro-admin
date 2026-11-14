@@ -5,12 +5,15 @@ import { Badge, ConfirmDialog, Modal } from '../components/ui/Primitives';
 
 export const StaffModule: React.FC<{
   staff: StaffMember[];
-  onSaveStaff: (member: StaffMember, isNew: boolean) => void;
+  currentUserEmail?: string;
+  canManageStaff?: boolean;
+  onSaveStaff: (member: StaffMember, isNew: boolean) => Promise<boolean> | void;
   onDeleteStaff: (id: string) => void;
-}> = ({ staff, onSaveStaff, onDeleteStaff }) => {
+}> = ({ staff, currentUserEmail = '', canManageStaff = true, onSaveStaff, onDeleteStaff }) => {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<StaffMember | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<StaffMember | null>(null);
+  const [saving, setSaving] = useState(false);
   const [form, setForm] = useState<Omit<StaffMember, 'id' | 'joinedAt'>>({
     name: '',
     email: '',
@@ -46,34 +49,51 @@ export const StaffModule: React.FC<{
     setModalOpen(true);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.name.trim() || !form.email.trim()) return;
-    onSaveStaff(
-      {
-        id: editing ? editing.id : `stf-${Date.now()}`,
-        joinedAt: editing ? editing.joinedAt : new Date().toISOString().slice(0, 10),
-        ...form,
-      },
-      !editing
-    );
-    setModalOpen(false);
+    if (!form.name.trim() || !form.email.trim() || saving) return;
+    setSaving(true);
+    try {
+      const ok = await onSaveStaff(
+        {
+          id: editing ? editing.id : `stf-${Date.now()}`,
+          joinedAt: editing ? editing.joinedAt : new Date().toISOString().slice(0, 10),
+          ...form,
+          name: form.name.trim(),
+          email: form.email.trim().toLowerCase(),
+          phone: form.phone.trim(),
+          shift: form.shift.trim(),
+        },
+        !editing
+      );
+      if (ok !== false) setModalOpen(false);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-[#F3EBDD]/70">
-          Manage team roles, shift schedules, and role-based dashboard access.
+          Manage Cloudflare Access team memberships, shift schedules, and role-based dashboard permissions.
         </p>
-        <button
-          type="button"
-          onClick={openNew}
-          className="flex items-center gap-2 rounded-xl bg-[#D7A65A] px-4 py-2.5 text-sm font-semibold text-[#101B17] hover:bg-[#e3b772]"
-        >
-          <Plus className="h-4 w-4" /> Invite Staff Member
-        </button>
+        {canManageStaff && (
+          <button
+            type="button"
+            onClick={openNew}
+            className="flex items-center gap-2 rounded-xl bg-[#D7A65A] px-4 py-2.5 text-sm font-semibold text-[#101B17] hover:bg-[#e3b772]"
+          >
+            <Plus className="h-4 w-4" /> Invite Staff Member
+          </button>
+        )}
       </div>
+
+      {!canManageStaff && (
+        <div className="rounded-xl border border-[#2C3D34] bg-[#1D2922] px-4 py-3 text-xs text-[#F3EBDD]/70">
+          Only Owner and Admin accounts can add, modify, or revoke staff access.
+        </div>
+      )}
 
       <div className="overflow-hidden rounded-2xl border border-[#2C3D34] bg-[#1D2922]">
         <div className="overflow-x-auto">
@@ -84,57 +104,73 @@ export const StaffModule: React.FC<{
                 <th className="px-5 py-3.5">Role</th>
                 <th className="px-5 py-3.5">Shift</th>
                 <th className="px-5 py-3.5">Status</th>
-                <th className="px-5 py-3.5 text-right">Actions</th>
+                {canManageStaff && <th className="px-5 py-3.5 text-right">Actions</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-[#2C3D34]">
-              {staff.map((m) => (
-                <tr key={m.id} className="transition hover:bg-[#101B17]/40">
-                  <td className="px-5 py-4">
-                    <p className="font-medium text-[#F3EBDD]">{m.name}</p>
-                    <p className="text-xs text-[#F3EBDD]/55">
-                      {m.email} • {m.phone}
-                    </p>
-                  </td>
-                  <td className="px-5 py-4">
-                    <Badge variant="gold">
-                      <ShieldCheck className="h-3 w-3" /> {m.role}
-                    </Badge>
-                  </td>
-                  <td className="px-5 py-4 text-xs text-[#F3EBDD]/75">{m.shift}</td>
-                  <td className="px-5 py-4">
-                    <Badge
-                      variant={
-                        m.status === 'On Shift'
-                          ? 'emerald'
-                          : m.status === 'Active'
-                          ? 'amber'
-                          : 'neutral'
-                      }
-                    >
-                      {m.status}
-                    </Badge>
-                  </td>
-                  <td className="px-5 py-4 text-right">
-                    <div className="inline-flex gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => openEdit(m)}
-                        className="rounded-lg border border-[#2C3D34] bg-[#101B17] p-2 text-[#F3EBDD]/80 hover:text-[#D7A65A]"
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setDeleteTarget(m)}
-                        className="rounded-lg border border-[#2C3D34] bg-[#101B17] p-2 text-rose-300/80 hover:text-rose-300"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {staff.map((m) => {
+                const isSelf = m.email.toLowerCase() === currentUserEmail.toLowerCase();
+                return (
+                  <tr key={m.id} className="transition hover:bg-[#101B17]/40">
+                    <td className="px-5 py-4">
+                      <p className="font-medium text-[#F3EBDD]">
+                        {m.name} {isSelf && <span className="text-xs text-[#D7A65A]">(You)</span>}
+                      </p>
+                      <p className="text-xs text-[#F3EBDD]/55">
+                        {m.email}
+                        {m.phone ? ` • ${m.phone}` : ''}
+                      </p>
+                    </td>
+                    <td className="px-5 py-4">
+                      <Badge variant="gold">
+                        <ShieldCheck className="h-3 w-3" /> {m.role}
+                      </Badge>
+                    </td>
+                    <td className="px-5 py-4 text-xs text-[#F3EBDD]/75">{m.shift}</td>
+                    <td className="px-5 py-4">
+                      <div className="flex flex-wrap gap-1.5">
+                        <Badge
+                          variant={
+                            m.status === 'On Shift'
+                              ? 'emerald'
+                              : m.status === 'Active'
+                              ? 'amber'
+                              : 'neutral'
+                          }
+                        >
+                          {m.status}
+                        </Badge>
+                        {m.membershipStatus === 'invited' && (
+                          <Badge variant="gold">Invite Pending</Badge>
+                        )}
+                      </div>
+                    </td>
+                    {canManageStaff && (
+                      <td className="px-5 py-4 text-right">
+                        <div className="inline-flex gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => openEdit(m)}
+                            className="rounded-lg border border-[#2C3D34] bg-[#101B17] p-2 text-[#F3EBDD]/80 hover:text-[#D7A65A]"
+                            aria-label={`Edit ${m.name}`}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            disabled={isSelf}
+                            onClick={() => setDeleteTarget(m)}
+                            className="rounded-lg border border-[#2C3D34] bg-[#101B17] p-2 text-rose-300/80 hover:text-rose-300 disabled:opacity-30"
+                            title={isSelf ? 'You cannot revoke your own membership' : `Remove ${m.name}`}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    )}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -144,7 +180,7 @@ export const StaffModule: React.FC<{
         open={modalOpen}
         onClose={() => setModalOpen(false)}
         title={editing ? 'Edit Staff Member' : 'Invite Staff Member'}
-        subtitle="Access credentials are sent via email invite (no passwords stored in client state)"
+        subtitle="Authorizes the team member's email in D1 memberships for Cloudflare Access login"
       >
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
@@ -163,9 +199,10 @@ export const StaffModule: React.FC<{
               <input
                 type="email"
                 required
+                disabled={Boolean(editing)}
                 value={form.email}
                 onChange={(e) => setForm({ ...form, email: e.target.value })}
-                className="w-full rounded-xl border border-[#2C3D34] bg-[#101B17] px-3.5 py-2.5 text-sm text-[#F3EBDD]"
+                className="w-full rounded-xl border border-[#2C3D34] bg-[#101B17] px-3.5 py-2.5 text-sm text-[#F3EBDD] disabled:opacity-60"
               />
             </div>
             <div>
@@ -194,7 +231,7 @@ export const StaffModule: React.FC<{
               </select>
             </div>
             <div>
-              <label className="mb-1.5 block text-xs font-medium text-[#F3EBDD]/75">Status</label>
+              <label className="mb-1.5 block text-xs font-medium text-[#F3EBDD]/75">Duty Status</label>
               <select
                 value={form.status}
                 onChange={(e) =>
@@ -227,9 +264,10 @@ export const StaffModule: React.FC<{
             </button>
             <button
               type="submit"
-              className="rounded-xl bg-[#D7A65A] px-5 py-2 text-sm font-semibold text-[#101B17]"
+              disabled={saving}
+              className="rounded-xl bg-[#D7A65A] px-5 py-2 text-sm font-semibold text-[#101B17] disabled:opacity-50"
             >
-              Save Member
+              {saving ? 'Saving...' : 'Save Member'}
             </button>
           </div>
         </form>

@@ -15,7 +15,7 @@ import {
   X,
   Sparkles,
 } from 'lucide-react';
-import { ModuleId } from '../../types';
+import { AuthenticatedAdminUser, ModuleId } from '../../types';
 
 export interface NavItem {
   id: ModuleId;
@@ -47,6 +47,8 @@ export const Sidebar: React.FC<{
   pendingOrdersCount: number;
   incomingWaiterCallsCount: number;
   restaurantName: string;
+  currentUser?: AuthenticatedAdminUser | null;
+  connected?: boolean;
 }> = ({
   activeModule,
   onSelectModule,
@@ -55,6 +57,8 @@ export const Sidebar: React.FC<{
   pendingOrdersCount,
   incomingWaiterCallsCount,
   restaurantName,
+  currentUser,
+  connected = false,
 }) => {
   const groups: Array<'Operations' | 'Menu & Media' | 'Growth & Team'> = [
     'Operations',
@@ -135,12 +139,24 @@ export const Sidebar: React.FC<{
       <div className="border-t border-[#2C3D34] p-4">
         <div className="rounded-xl border border-[#2C3D34] bg-[#1D2922] p-3">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold tracking-wide text-[#F3EBDD]">LIVE API — PARTIAL</span>
-            <span className="h-2 w-2 rounded-full bg-[#D7A65A]" />
+            <span className="text-xs font-semibold tracking-wide text-[#F3EBDD]">
+              {connected ? 'LIVE CLOUD · D1 + R2' : 'CLOUD DISCONNECTED'}
+            </span>
+            <span
+              className={`h-2 w-2 rounded-full ${
+                connected ? 'bg-emerald-400' : 'bg-amber-400'
+              }`}
+            />
           </div>
-          <p className="mt-1 text-[11px] text-[#F3EBDD]/55">
-            Orders, menu, categories and tables use the cloud API. Settings, staff, promotions, homepage and gallery still need database integration.
-          </p>
+          {currentUser ? (
+            <p className="mt-1 truncate text-[11px] text-[#F3EBDD]/65">
+              {currentUser.name} · <span className="text-[#D7A65A]">{currentUser.uiRole}</span>
+            </p>
+          ) : (
+            <p className="mt-1 text-[11px] text-[#F3EBDD]/55">
+              Verifying Cloudflare Access session...
+            </p>
+          )}
         </div>
       </div>
     </div>

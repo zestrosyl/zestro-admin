@@ -10,7 +10,9 @@
     "preview": "vite preview",
     "dev:api": "npm --prefix worker run dev",
     "deploy:api": "npm --prefix worker run deploy",
-    "typecheck:api": "npm --prefix worker run typecheck"
+    "typecheck:api": "npm --prefix worker run typecheck",
+    "typecheck:public-api": "npm --prefix worker-public run typecheck",
+    "test": "npm --prefix worker run test"
   },
   "dependencies": {
     "lucide-react": "^0.460.0",

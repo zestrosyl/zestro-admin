@@ -12,11 +12,30 @@ export type ModuleId =
   | 'staff'
   | 'settings';
 
+export type AdminDbRole = 'owner' | 'admin' | 'manager' | 'staff' | 'viewer';
+
+export interface AuthenticatedAdminUser {
+  id: string;
+  email: string;
+  name: string;
+  role: AdminDbRole;
+  uiRole: StaffRole;
+}
+
+export interface TenantInfo {
+  id: string;
+  name: string;
+  slug: string;
+  currency: string;
+  timezone: string;
+}
+
 export interface Category {
   id: string;
   name: string;
   slug: string;
   description: string;
+  categoryType?: 'food' | 'beverage';
   sortOrder: number;
   active: boolean;
 }
@@ -28,10 +47,12 @@ export interface MenuItem {
   price: number;
   description: string;
   imageUrl: string;
+  imageKey?: string | null;
   available: boolean;
   featured: boolean;
   prepMinutes: number;
   dietaryTags: string[];
+  options?: Record<string, unknown>;
   ordersCount: number;
 }
 
@@ -55,6 +76,7 @@ export interface HomepageSection {
 }
 
 export interface HomepageConfig {
+  heroImageKey?: string;
   heroImageUrl: string;
   heroHeadline: string;
   heroSubheadline: string;
@@ -70,6 +92,7 @@ export interface GalleryPhoto {
   title: string;
   caption: string;
   category: 'Dining Room' | 'Culinary' | 'Private Events' | 'Bar & Lounge';
+  imageKey?: string | null;
   imageUrl: string;
   sortOrder: number;
   featured: boolean;
@@ -82,21 +105,36 @@ export interface OrderLineItem {
   name: string;
   quantity: number;
   unitPrice: number;
+  variantLabel?: string;
+  customisations?: Array<{
+    groupName: string;
+    optionName: string;
+    price: number;
+  }>;
+  selectedSides?: string[];
+  specialInstructions?: string;
 }
 
 export interface Order {
   id: string;
   orderNumber: string;
+  tableId?: string;
   tableNumber: string;
   customerName: string;
+  customerPhone?: string;
+  deliveryAddress?: string;
   orderType: 'Dine-In' | 'Takeaway' | 'Delivery';
   items: OrderLineItem[];
   subtotal: number;
+  discount?: number;
   tax: number;
   serviceCharge?: number;
+  deliveryFee?: number;
+  promoCode?: string;
   total: number;
   status: OrderStatus;
   notes?: string;
+  staffNote?: string;
   createdAt: string;
 }
 
@@ -109,6 +147,7 @@ export interface RestaurantTable {
   capacity: number;
   status: TableStatus;
   qrPath: string;
+  qrUrl?: string;
   activeOrderNumber?: string;
 }
 
@@ -117,7 +156,9 @@ export type WaiterCallStatus = 'Incoming' | 'Acknowledged' | 'Resolved';
 
 export interface WaiterCall {
   id: string;
+  tableId?: string;
   tableNumber: string;
+  zone?: string;
   requestType: WaiterCallType;
   note?: string;
   status: WaiterCallStatus;
@@ -147,7 +188,9 @@ export interface StaffMember {
   email: string;
   phone: string;
   role: StaffRole;
+  dbRole?: AdminDbRole;
   status: 'On Shift' | 'Active' | 'Off Duty';
+  membershipStatus?: string;
   shift: string;
   joinedAt: string;
 }
@@ -159,7 +202,10 @@ export interface RestaurantSettings {
   currency: string;
   taxRatePercent: number;
   serviceChargePercent: number;
+  deliveryFee: number;
+  minOrderAmount: number;
   phone: string;
+  whatsappNumber: string;
   email: string;
   address: string;
   openingHours: string;
@@ -177,6 +223,7 @@ export interface ActivityEvent {
   title: string;
   detail: string;
   time: string;
+  createdAt?: string;
   type: 'order' | 'waiter' | 'menu' | 'staff';
 }
 
