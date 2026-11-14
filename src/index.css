@@ -2,37 +2,124 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  color-scheme: dark;
+:root,
+[data-theme='light'] {
+  color-scheme: light;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  --zestro-bg: #0b1411;
-  --zestro-panel: #14211b;
-  --zestro-panel-raised: #1a2a22;
-  --zestro-border: rgba(185, 204, 188, 0.12);
-  --zestro-gold: #d7a65a;
-  --zestro-ivory: #f3ebdd;
+
+  /* Surfaces */
+  --c-canvas: 246 245 241;
+  --c-surface: 255 255 255;
+  --c-surface-2: 240 239 233;
+  --c-line: 229 227 219;
+  --c-line-strong: 208 205 194;
+  --shadow: 22 32 27;
+
+  /* Text */
+  --c-ink: 22 32 27;
+  --c-ink-2: 74 87 80;
+  --c-ink-3: 102 114 107;
+
+  /* Brand: ZESTRO green is the primary action color, gold is the accent. */
+  --c-primary: 31 77 58;
+  --c-primary-hover: 24 62 47;
+  --c-on-primary: 255 255 255;
+  --c-primary-soft: 230 239 234;
+  --c-primary-ink: 31 77 58;
+  --c-accent: 183 130 47;
+  --c-accent-soft: 248 238 218;
+  --c-accent-ink: 124 82 15;
+
+  /* Status */
+  --c-success: 30 122 79;
+  --c-success-soft: 225 242 232;
+  --c-success-ink: 20 90 57;
+  --c-warning: 178 106 0;
+  --c-warning-soft: 252 240 212;
+  --c-warning-ink: 133 77 0;
+  --c-danger: 180 35 24;
+  --c-on-danger: 255 255 255;
+  --c-danger-soft: 252 229 226;
+  --c-danger-ink: 145 28 18;
+  --c-info: 37 99 168;
+  --c-info-soft: 224 237 251;
+  --c-info-ink: 28 76 132;
+}
+
+/* The dark theme keeps ZESTRO's original deep green and gold identity. */
+[data-theme='dark'],
+.legacy-dark {
+  color-scheme: dark;
+
+  --c-canvas: 11 20 17;
+  --c-surface: 20 33 27;
+  --c-surface-2: 26 42 34;
+  --c-line: 44 61 52;
+  --c-line-strong: 66 88 76;
+  --shadow: 0 0 0;
+
+  --c-ink: 243 235 221;
+  --c-ink-2: 206 200 187;
+  --c-ink-3: 154 163 155;
+
+  --c-primary: 215 166 90;
+  --c-primary-hover: 227 183 114;
+  --c-on-primary: 16 27 23;
+  --c-primary-soft: 41 53 38;
+  --c-primary-ink: 227 183 114;
+  --c-accent: 215 166 90;
+  --c-accent-soft: 46 45 32;
+  --c-accent-ink: 227 183 114;
+
+  --c-success: 74 190 130;
+  --c-success-soft: 22 58 43;
+  --c-success-ink: 134 226 178;
+  --c-warning: 232 163 62;
+  --c-warning-soft: 62 46 20;
+  --c-warning-ink: 244 196 120;
+  --c-danger: 240 113 100;
+  --c-on-danger: 40 12 10;
+  --c-danger-soft: 66 30 28;
+  --c-danger-ink: 250 164 154;
+  --c-info: 110 168 232;
+  --c-info-soft: 24 42 66;
+  --c-info-ink: 160 197 240;
+}
+
+/*
+ * Modules that have not been migrated to the new design system still use
+ * hard-coded dark colors. In the light theme they render inside a dark canvas
+ * so they stay readable until they are redesigned. In the dark theme the wrapper
+ * is invisible.
+ */
+[data-theme='light'] .legacy-dark {
+  border-radius: 1rem;
+  padding: 1.25rem;
+  background: #0b1411;
+  color: #f3ebdd;
 }
 
 html {
   min-width: 320px;
   scroll-behavior: smooth;
-  background: var(--zestro-bg);
+  background: rgb(var(--c-canvas));
 }
 
 body {
   min-width: 320px;
   min-height: 100vh;
   margin: 0;
-  background:
-    radial-gradient(ellipse at 18% -8%, rgba(54, 91, 68, 0.2), transparent 36rem),
-    radial-gradient(ellipse at 100% 20%, rgba(215, 166, 90, 0.055), transparent 30rem),
-    var(--zestro-bg);
-  color: var(--zestro-ivory);
+  background: rgb(var(--c-canvas));
+  color: rgb(var(--c-ink));
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  font-feature-settings: "ss01" on;
+  font-feature-settings: "cv11" on, "ss01" on;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
 }
 
 button, input, select, textarea {
@@ -53,12 +140,8 @@ a:focus-visible,
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible {
-  outline: 2px solid var(--zestro-gold);
+  outline: 2px solid rgb(var(--c-primary));
   outline-offset: 2px;
-}
-
-input, select, textarea {
-  color-scheme: dark;
 }
 
 img {
@@ -67,8 +150,8 @@ img {
 }
 
 ::selection {
-  background: rgba(215, 166, 90, 0.28);
-  color: #fff8ed;
+  background: rgb(var(--c-accent) / 0.28);
+  color: inherit;
 }
 
 ::-webkit-scrollbar {
@@ -77,21 +160,23 @@ img {
 }
 
 ::-webkit-scrollbar-track {
-  background: #0b1411;
+  background: rgb(var(--c-canvas));
 }
 
 ::-webkit-scrollbar-thumb {
-  border: 2px solid #0b1411;
+  border: 2px solid rgb(var(--c-canvas));
   border-radius: 999px;
-  background: #34483c;
+  background: rgb(var(--c-line-strong));
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #d7a65a;
+  background: rgb(var(--c-ink-3));
 }
 
 .module-enter {
-  animation: module-enter 260ms cubic-bezier(.2,.75,.25,1) both;
+  /* `backwards` (not `both`) so no transform lingers: a lingering transform would make fixed-position
+     modals position against this wrapper instead of the viewport. */
+  animation: module-enter 260ms cubic-bezier(.2,.75,.25,1) backwards;
 }
 
 .modal-backdrop {
@@ -133,4 +218,28 @@ img {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: rgb(var(--c-surface-2));
+}
+
+.skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgb(var(--c-surface) / 0.7), transparent);
+  animation: shimmer 1.4s infinite;
+}
+
+.popover-enter {
+  animation: popover-enter 130ms ease-out both;
+}
+
+@keyframes popover-enter {
+  from { opacity: 0; transform: translateY(-4px) scale(.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
