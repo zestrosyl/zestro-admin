@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { usePersistentState } from './hooks/usePersistentState';
+import { adminApi } from './services/liveApi';
 import {
   INITIAL_ACTIVITY,
   INITIAL_CATEGORIES,
@@ -55,14 +56,14 @@ export function App() {
   const [globalSearch, setGlobalSearch] = useState('');
   const [openCreateMenuSignal, setOpenCreateMenuSignal] = useState(0);
 
-  const [menuItems, setMenuItems] = usePersistentState<MenuItem[]>('menu-items', INITIAL_MENU_ITEMS);
-  const [categories, setCategories] = usePersistentState<Category[]>('categories', INITIAL_CATEGORIES);
+  const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [mediaAssets, setMediaAssets] = usePersistentState<MediaAsset[]>('media-assets', INITIAL_MEDIA_ASSETS);
   const [homepageConfig, setHomepageConfig] = usePersistentState<HomepageConfig>('homepage-config', INITIAL_HOMEPAGE_CONFIG);
   const [galleryPhotos, setGalleryPhotos] = usePersistentState<GalleryPhoto[]>('gallery-photos', INITIAL_GALLERY_PHOTOS);
-  const [orders, setOrders] = usePersistentState<Order[]>('orders', INITIAL_ORDERS);
-  const [tables, setTables] = usePersistentState<RestaurantTable[]>('tables', INITIAL_TABLES);
-  const [waiterCalls, setWaiterCalls] = usePersistentState<WaiterCall[]>('waiter-calls', INITIAL_WAITER_CALLS);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [tables, setTables] = useState<RestaurantTable[]>([]);
+  const [waiterCalls, setWaiterCalls] = useState<WaiterCall[]>([]);
   const [promotions, setPromotions] = usePersistentState<Promotion[]>('promotions', INITIAL_PROMOTIONS);
   const [staff, setStaff] = usePersistentState<StaffMember[]>('staff', INITIAL_STAFF);
   const [settings, setSettings] = usePersistentState<RestaurantSettings>('settings', INITIAL_SETTINGS);
@@ -80,6 +81,37 @@ export function App() {
   const logActivity = (title: string, detail: string, type: ActivityEvent['type']) => {
     setActivities((prev) => [{ id: `act-${Date.now()}`, title, detail, time: 'Just now', type }, ...prev]);
   };
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        await adminApi('/api/me');
+        const [menu, cats, liveOrders, liveTables, liveCalls] = await Promise.all([
+          adminApi<any[]>('/api/menu'),
+          adminApi<any[]>('/api/categories'),
+          adminApi<any[]>('/api/orders'),
+          adminApi<any[]>('/api/tables'),
+          adminApi<any[]>('/api/waiter-calls'),
+        ]);
+        if (!active) return;
+        setMenuItems(menu.map((x) => ({
+          id: x.id, name: x.name, categoryId: x.categoryId || '', price: Number(x.priceMinor || 0) / 100,
+          description: x.description || '', imageUrl: '', available: Boolean(x.available), featured: Boolean(x.featured),
+          prepMinutes: Number(x.prepMinutes || 0), dietaryTags: Array.isArray(x.dietaryTags) ? x.dietaryTags : [], ordersCount: 0,
+        })));
+        setCategories(cats.map((x) => ({...x, active:Boolean(x.active), sortOrder:Number(x.sortOrder)||0})));
+        setOrders(liveOrders);
+        setTables(liveTables);
+        setWaiterCalls(liveCalls);
+        setSettings((prev) => ({...prev, websiteUrl: prev.websiteUrl || 'https://zestro-customer-website.pages.dev', workerApiBaseUrl: 'https://zestro-admin-api.zestro-syl.workers.dev'}));
+        setActivities([]);
+      } catch (error) {
+        if (active) notify(error instanceof Error ? error.message : 'Unable to connect to the live ZESTRO backend.', 'warning');
+      }
+    })();
+    return () => { active = false; };
+  }, []);
 
   const pendingOrdersCount = orders.filter((o) => o.status === 'Pending' || o.status === 'Preparing').length;
   const incomingWaiterCallsCount = waiterCalls.filter((w) => w.status === 'Incoming').length;
@@ -133,16 +165,23 @@ export function App() {
               globalSearch={globalSearch}
               openCreateSignal={openCreateMenuSignal}
               onSaveItem={(item, isNew) => {
-                setMenuItems((prev) =>
-                  isNew ? [item, ...prev] : prev.map((m) => (m.id === item.id ? item : m))
-                );
-                notify(isNew ? `Added "${item.name}"` : `Updated "${item.name}"`);
-                logActivity(isNew ? 'Menu Item Added' : 'Menu Item Updated', item.name, 'menu');
+                void (async () => {
+                  try {
+                    const payload = {name:item.name,categoryId:item.categoryId,description:item.description,priceMinor:Math.round(item.price*100),available:item.available,featured:item.featured,prepMinutes:item.prepMinutes};
+                    const result = await adminApi<{id?:string}>(isNew?'/api/menu':`/api/menu/${item.id}`,isNew?'POST':'PATCH',payload);
+                    const saved = isNew ? {...item,id:result.id||item.id} : item;
+                    setMenuItems((prev) => isNew ? [saved,...prev] : prev.map((m)=>(m.id===saved.id?saved:m)));
+                    notify(isNew ? `Added "${item.name}"` : `Updated "${item.name}"`);
+                    logActivity(isNew ? 'Menu Item Added' : 'Menu Item Updated', item.name, 'menu');
+                  } catch (error) { notify(error instanceof Error?error.message:'Menu save failed','warning'); }
+                })();
               }}
               onDeleteItem={(id) => {
-                const target = menuItems.find((m) => m.id === id);
-                setMenuItems((prev) => prev.filter((m) => m.id !== id));
-                notify(`Deleted "${target?.name ?? 'item'}"`, 'warning');
+                void adminApi(`/api/menu/${id}`,'DELETE').then(() => {
+                  const target=menuItems.find((m)=>m.id===id);
+                  setMenuItems((prev)=>prev.filter((m)=>m.id!==id));
+                  notify(`Deleted "${target?.name??'item'}"`,'warning');
+                }).catch((error)=>notify(error instanceof Error?error.message:'Menu delete failed','warning'));
               }}
             />
           )}
@@ -152,14 +191,20 @@ export function App() {
               categories={categories}
               menuItems={menuItems}
               onSaveCategory={(cat, isNew) => {
-                setCategories((prev) =>
-                  isNew ? [...prev, cat] : prev.map((c) => (c.id === cat.id ? cat : c))
-                );
-                notify(isNew ? `Created category "${cat.name}"` : `Updated "${cat.name}"`);
+                void (async () => {
+                  try {
+                    const payload={name:cat.name,slug:cat.slug,description:cat.description,sortOrder:cat.sortOrder,active:cat.active};
+                    const result=await adminApi<{id?:string}>(isNew?'/api/categories':`/api/categories/${cat.id}`,isNew?'POST':'PATCH',payload);
+                    const saved=isNew?{...cat,id:result.id||cat.id}:cat;
+                    setCategories((prev)=>isNew?[...prev,saved]:prev.map((x)=>x.id===saved.id?saved:x));
+                    notify(isNew?`Created category "${cat.name}"`:`Updated "${cat.name}"`);
+                  } catch(error) { notify(error instanceof Error?error.message:'Category save failed','warning'); }
+                })();
               }}
               onDeleteCategory={(id) => {
-                setCategories((prev) => prev.filter((c) => c.id !== id));
-                notify('Category removed', 'warning');
+                void adminApi(`/api/categories/${id}`,'DELETE').then(()=>{
+                  setCategories((prev)=>prev.filter((x)=>x.id!==id));notify('Category removed','warning');
+                }).catch((error)=>notify(error instanceof Error?error.message:'Category delete failed','warning'));
               }}
               onReorderCategory={(id, dir) => {
                 const sorted = [...categories].sort((a, b) => a.sortOrder - b.sortOrder);
@@ -242,8 +287,10 @@ export function App() {
               restaurantName={settings.restaurantName}
               globalSearch={globalSearch}
               onUpdateStatus={(id, status: OrderStatus) => {
-                setOrders((prev) => prev.map((o) => (o.id === id ? { ...o, status } : o)));
-                notify(`Order updated to ${status}`);
+                void adminApi(`/api/orders/${id}`,'PATCH',{status}).then(()=>{
+                  setOrders((prev)=>prev.map((o)=>(o.id===id?{...o,status}:o)));
+                  notify(`Order updated to ${status}`);
+                }).catch((error)=>notify(error instanceof Error?error.message:'Order update failed','warning'));
               }}
               onCreateOrder={(order) => {
                 setOrders((prev) => [order, ...prev]);
@@ -258,14 +305,20 @@ export function App() {
               tables={tables}
               publicMenuBaseUrl={settings.websiteUrl}
               onSaveTable={(tbl, isNew) => {
-                setTables((prev) =>
-                  isNew ? [...prev, tbl] : prev.map((t) => (t.id === tbl.id ? tbl : t))
-                );
-                notify(isNew ? `Added table ${tbl.number}` : `Updated table ${tbl.number}`);
+                void (async()=>{
+                  try{
+                    const payload={number:tbl.number,zone:tbl.zone,capacity:tbl.capacity,status:tbl.status};
+                    const result=await adminApi<{id?:string}>(isNew?'/api/tables':`/api/tables/${tbl.id}`,isNew?'POST':'PATCH',payload);
+                    const saved=isNew?{...tbl,id:result.id||tbl.id}:tbl;
+                    setTables((prev)=>isNew?[...prev,saved]:prev.map((x)=>x.id===saved.id?saved:x));
+                    notify(isNew?`Added table ${tbl.number}`:`Updated table ${tbl.number}`);
+                  }catch(error){notify(error instanceof Error?error.message:'Table save failed','warning')}
+                })();
               }}
               onDeleteTable={(id) => {
-                setTables((prev) => prev.filter((t) => t.id !== id));
-                notify('Table removed', 'warning');
+                void adminApi(`/api/tables/${id}`,'DELETE').then(()=>{
+                  setTables((prev)=>prev.filter((t)=>t.id!==id));notify('Table removed','warning');
+                }).catch((error)=>notify(error instanceof Error?error.message:'Table delete failed','warning'));
               }}
               onNotify={(msg) => notify(msg, 'info')}
             />
@@ -275,27 +328,12 @@ export function App() {
             <WaiterCallsModule
               calls={waiterCalls}
               onUpdateStatus={(id, status: WaiterCallStatus) => {
-                setWaiterCalls((prev) =>
-                  prev.map((c) =>
-                    c.id === id ? { ...c, status, assignedTo: c.assignedTo ?? 'Nadia Karim' } : c
-                  )
-                );
-                notify(`Waiter call marked ${status}`);
+                void adminApi(`/api/waiter-calls/${id}`,'PATCH',{status}).then(()=>{
+                  setWaiterCalls((prev)=>prev.map((x)=>x.id===id?{...x,status}:x));
+                  notify(`Waiter call marked ${status}`);
+                }).catch((error)=>notify(error instanceof Error?error.message:'Waiter update failed','warning'));
               }}
-              onSimulateCall={(type: WaiterCallType) => {
-                const tbl = tables[Math.floor(Math.random() * tables.length)]?.number ?? 'T-03';
-                const call: WaiterCall = {
-                  id: `wc-${Date.now()}`,
-                  tableNumber: tbl,
-                  requestType: type,
-                  note: 'Guest requested assistance via table QR menu.',
-                  status: 'Incoming',
-                  createdAt: 'Just now',
-                };
-                setWaiterCalls((prev) => [call, ...prev]);
-                notify(`Incoming waiter call from ${tbl}`, 'warning');
-                logActivity(`Waiter Call — ${tbl}`, type, 'waiter');
-              }}
+              onSimulateCall={(_type: WaiterCallType) => notify('Test calls are disabled on the live restaurant dashboard.','info')}
             />
           )}
 
