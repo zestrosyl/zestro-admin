@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { usePersistentState } from './hooks/usePersistentState';
+import { useTheme } from './hooks/useTheme';
 import {
   INITIAL_ACTIVITY,
   INITIAL_CATEGORIES,
@@ -50,6 +51,7 @@ import { StaffModule } from './modules/StaffModule';
 import { SettingsModule } from './modules/SettingsModule';
 
 export function App() {
+  const [theme, toggleTheme] = useTheme();
   const [activeModule, setActiveModule] = useState<ModuleId>('overview');
   const [mobileOpen, setMobileOpen] = useState(false);
   const [globalSearch, setGlobalSearch] = useState('');
@@ -85,7 +87,7 @@ export function App() {
   const incomingWaiterCallsCount = waiterCalls.filter((w) => w.status === 'Incoming').length;
 
   return (
-    <div className="flex min-h-screen bg-transparent text-[#F3EBDD]">
+    <div className="flex min-h-screen bg-canvas text-ink">
       <Sidebar
         activeModule={activeModule}
         onSelectModule={setActiveModule}
@@ -108,10 +110,13 @@ export function App() {
           }}
           globalSearch={globalSearch}
           onGlobalSearchChange={setGlobalSearch}
+          theme={theme}
+          onToggleTheme={toggleTheme}
         />
 
         <main className="flex-1 p-4 sm:p-6 lg:p-8">
-          <div key={activeModule} className="module-enter">
+          {/* Modules not yet migrated to the new design system render on a dark canvas in the light theme. */}
+          <div key={activeModule} className={`module-enter ${activeModule === 'overview' ? '' : 'legacy-dark'}`}>
           {activeModule === 'overview' && (
             <OverviewModule
               orders={orders}

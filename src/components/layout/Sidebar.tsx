@@ -39,6 +39,8 @@ export const NAV_ITEMS: NavItem[] = [
   { id: 'settings', label: 'Settings', group: 'Growth & Team', icon: <Settings className="h-4 w-4" /> },
 ];
 
+type NavGroup = NavItem['group'];
+
 export const Sidebar: React.FC<{
   activeModule: ModuleId;
   onSelectModule: (id: ModuleId) => void;
@@ -56,104 +58,126 @@ export const Sidebar: React.FC<{
   incomingWaiterCallsCount,
   restaurantName,
 }) => {
-  const groups: Array<'Operations' | 'Menu & Media' | 'Growth & Team'> = [
-    'Operations',
-    'Menu & Media',
-    'Growth & Team',
-  ];
+  const groups: NavGroup[] = ['Operations', 'Menu & Media', 'Growth & Team'];
 
-  const content = (
-    <div className="flex h-full flex-col bg-[#101B17] text-[#F3EBDD]">
-      <div className="flex items-center justify-between border-b border-[#2C3D34] px-5 py-5">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#D7A65A]/40 bg-[#1D2922] text-[#D7A65A]">
-            <Sparkles className="h-5 w-5" />
-          </div>
-          <div>
-            <p className="font-serif text-base font-bold tracking-wider text-[#F3EBDD]">
-              {restaurantName} <span className="text-[#D7A65A]">ADMIN</span>
-            </p>
-            <p className="text-[11px] text-[#F3EBDD]/55">Restaurant Operations</p>
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={onCloseMobile}
-          className="rounded-lg p-1.5 text-[#F3EBDD]/60 hover:bg-[#1D2922] lg:hidden"
-          aria-label="Close navigation"
-        >
-          <X className="h-5 w-5" />
-        </button>
-      </div>
-
-      <nav className="flex-1 space-y-6 overflow-y-auto px-3 py-5">
-        {groups.map((group) => (
-          <div key={group}>
-            <p className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#D7A65A]/75">
-              {group}
-            </p>
-            <div className="space-y-1">
-              {NAV_ITEMS.filter((i) => i.group === group).map((item) => {
-                const active = activeModule === item.id;
-                const badgeCount =
-                  item.id === 'orders'
-                    ? pendingOrdersCount
-                    : item.id === 'waiter-calls'
-                    ? incomingWaiterCallsCount
-                    : 0;
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => {
-                      onSelectModule(item.id);
-                      onCloseMobile();
-                    }}
-                    className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-sm font-medium transition-all ${
-                      active
-                        ? 'border border-[#D7A65A]/40 bg-[#1D2922] text-[#D7A65A] shadow-sm'
-                        : 'border border-transparent text-[#F3EBDD]/75 hover:bg-[#1D2922]/60 hover:text-[#F3EBDD]'
-                    }`}
-                  >
-                    <span className="flex items-center gap-3">
-                      {item.icon}
-                      <span>{item.label}</span>
-                    </span>
-                    {badgeCount > 0 && (
-                      <span className="rounded-full bg-[#D7A65A] px-2 py-0.5 text-[11px] font-bold text-[#101B17]">
-                        {badgeCount}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
+  /**
+   * `drawer` is the full mobile panel. `responsive` is the desktop column: an icon
+   * rail on tablet widths that expands to the full sidebar from the xl breakpoint.
+   */
+  const renderContent = (mode: 'drawer' | 'responsive') => {
+    const full = mode === 'drawer';
+    const showLabel = full ? '' : 'hidden xl:inline';
+    const showBlock = full ? '' : 'hidden xl:block';
+    return (
+      <div className="flex h-full flex-col bg-surface text-ink">
+        <div className={`flex items-center justify-between border-b border-line py-4 ${full ? 'px-5' : 'justify-center px-3 xl:justify-between xl:px-5'}`}>
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary text-on-primary shadow-card">
+              <Sparkles className="h-[18px] w-[18px]" />
+            </div>
+            <div className={`min-w-0 ${showBlock}`}>
+              <p className="truncate font-serif text-[15px] font-bold leading-tight tracking-wider text-ink">
+                {restaurantName} <span className="text-accent">ADMIN</span>
+              </p>
+              <p className="text-[11px] leading-tight text-ink-3">Restaurant Operations</p>
             </div>
           </div>
-        ))}
-      </nav>
+          {full && (
+            <button
+              type="button"
+              onClick={onCloseMobile}
+              className="rounded-lg p-1.5 text-ink-3 hover:bg-surface-2 hover:text-ink"
+              aria-label="Close navigation"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          )}
+        </div>
 
-      <div className="border-t border-[#2C3D34] p-4">
-        <div className="rounded-xl border border-[#2C3D34] bg-[#1D2922] p-3">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold tracking-wide text-[#F3EBDD]">DEMO WORKSPACE</span>
-            <span className="h-2 w-2 rounded-full bg-[#D7A65A]" />
+        <nav className="flex-1 overflow-y-auto px-3 py-4" aria-label="Main navigation">
+          {groups.map((group, gi) => (
+            <div key={group} className={gi > 0 ? 'mt-5' : ''}>
+              <p className={`mb-1.5 px-3 text-[11px] font-semibold uppercase tracking-wider text-ink-3 ${showBlock}`}>
+                {group}
+              </p>
+              {!full && gi > 0 && <div className="mx-2 mb-3 border-t border-line xl:hidden" />}
+              <div className="space-y-0.5">
+                {NAV_ITEMS.filter((i) => i.group === group).map((item) => {
+                  const active = activeModule === item.id;
+                  const badgeCount =
+                    item.id === 'orders'
+                      ? pendingOrdersCount
+                      : item.id === 'waiter-calls'
+                      ? incomingWaiterCallsCount
+                      : 0;
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      title={item.label}
+                      aria-current={active ? 'page' : undefined}
+                      onClick={() => {
+                        onSelectModule(item.id);
+                        onCloseMobile();
+                      }}
+                      className={`group relative flex w-full items-center rounded-lg py-2 text-sm transition-colors ${
+                        full ? 'justify-between px-3' : 'justify-center px-0 xl:justify-between xl:px-3'
+                      } ${
+                        active
+                          ? 'bg-primary-soft font-semibold text-primary-ink'
+                          : 'font-medium text-ink-2 hover:bg-surface-2 hover:text-ink'
+                      }`}
+                    >
+                      {active && <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-primary" />}
+                      <span className="flex items-center gap-3">
+                        <span className={`transition-transform duration-150 ${active ? '' : 'group-hover:translate-x-0.5'}`}>
+                          {item.icon}
+                        </span>
+                        <span className={showLabel}>{item.label}</span>
+                      </span>
+                      {badgeCount > 0 && (
+                        <>
+                          <span className={`rounded-full bg-primary px-1.5 py-px text-[11px] font-semibold text-on-primary ${showLabel}`}>
+                            {badgeCount}
+                          </span>
+                          {!full && (
+                            <span className="absolute right-2 top-1.5 h-2 w-2 rounded-full bg-accent ring-2 ring-surface xl:hidden" aria-hidden="true" />
+                          )}
+                        </>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </nav>
+
+        <div className={`border-t border-line p-3 ${full ? '' : 'hidden xl:block'}`}>
+          <div className="rounded-xl bg-surface-2 p-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-ink">Demo workspace</span>
+              <span className="h-2 w-2 rounded-full bg-accent" aria-hidden="true" />
+            </div>
+            <p className="mt-1 text-xs leading-relaxed text-ink-3">
+              Changes save in this browser. Cloud backend not connected.
+            </p>
           </div>
-          <p className="mt-1 text-[11px] text-[#F3EBDD]/55">
-            Changes save in this browser. Cloud backend not connected.
-          </p>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   return (
     <>
-      <aside className="sticky top-0 hidden h-screen w-64 shrink-0 border-r border-[#2C3D34] lg:block">{content}</aside>
+      <aside className="sticky top-0 hidden h-screen w-[72px] shrink-0 border-r border-line md:block xl:w-64">
+        {renderContent('responsive')}
+      </aside>
       {mobileOpen && (
-        <div className="fixed inset-0 z-40 flex lg:hidden">
-          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm" onClick={onCloseMobile} />
-          <aside className="relative z-50 w-72 max-w-[85vw] border-r border-[#2C3D34]">
-            {content}
+        <div className="fixed inset-0 z-40 flex md:hidden">
+          <div className="modal-backdrop fixed inset-0 bg-black/55 backdrop-blur-[2px]" onClick={onCloseMobile} />
+          <aside className="relative z-50 w-72 max-w-[85vw] border-r border-line shadow-pop">
+            {renderContent('drawer')}
           </aside>
         </div>
       )}
