@@ -1,5 +1,4 @@
--- Additive authentication schema. Existing restaurant and membership records
--- remain untouched. Apply only to an isolated development D1 during this PR.
+-- Additive authentication schema. Existing restaurant/membership rows untouched.
 PRAGMA foreign_keys = ON;
 
 CREATE TABLE IF NOT EXISTS user (
@@ -60,8 +59,21 @@ CREATE TABLE IF NOT EXISTS auth_invitation_tokens (
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS auth_owner_link_proofs (
+  id TEXT PRIMARY KEY NOT NULL,
+  restaurant_id TEXT NOT NULL REFERENCES restaurants(id) ON DELETE CASCADE,
+  membership_id TEXT NOT NULL REFERENCES memberships(id) ON DELETE CASCADE,
+  access_subject TEXT NOT NULL,
+  better_auth_user_id TEXT NOT NULL,
+  verified_by TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  consumed_at TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE INDEX IF NOT EXISTS idx_auth_session_user ON session(userId);
 CREATE INDEX IF NOT EXISTS idx_auth_account_user ON account(userId);
 CREATE INDEX IF NOT EXISTS idx_auth_verification_identifier ON verification(identifier);
 CREATE INDEX IF NOT EXISTS idx_auth_invitation_membership ON auth_invitation_tokens(membership_id);
 CREATE INDEX IF NOT EXISTS idx_auth_invitation_expiry ON auth_invitation_tokens(expires_at);
+CREATE INDEX IF NOT EXISTS idx_auth_owner_proofs_expiry ON auth_owner_link_proofs(expires_at);
