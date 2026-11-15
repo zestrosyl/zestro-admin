@@ -3,7 +3,20 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "scripts": {"dev":"wrangler dev","deploy":"wrangler deploy","typecheck":"tsc --noEmit","test":"node --test test/production-repair.test.mjs test/branding-offers.test.mjs test/trial-mvp.test.mjs"},
-  "dependencies": {"jose":"^5.9.6"},
-  "devDependencies": {"@cloudflare/workers-types":"^4.20241127.0","typescript":"^5.6.3","wrangler":"^3.91.0"}
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test test/production-repair.test.mjs test/branding-offers.test.mjs test/trial-mvp.test.mjs test/auth-workflow.integration.test.mjs test/auth-workflow.integration.test.mjs",
+    "test:auth-integration": "node --test test/auth-workflow.integration.test.mjs"
+  },
+  "dependencies": {
+    "better-auth": "^1.5.0",
+    "jose": "^5.9.6"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241127.0",
+    "typescript": "^5.6.3",
+    "wrangler": "^3.91.0"
+  }
 }

@@ -33,7 +33,7 @@ describe('ZESTRO Trial MVP Completion & Admin Simplification', () => {
     assert.ok(sidebar.includes('/cdn-cgi/access/logout'), 'Missing admin logout link');
   });
 
-  test('2. Bangladesh-only localization in Admin and Customer UI', () => {
+  test('2. Bangladesh-only localization in Admin and Customer UI', (t) => {
     const settings = fs.readFileSync(
       path.join(ADMIN_ROOT, 'src/modules/SettingsModule.tsx'),
       'utf8'
@@ -44,10 +44,12 @@ describe('ZESTRO Trial MVP Completion & Admin Simplification', () => {
     assert.ok(settings.includes('Asia/Dhaka'), 'Admin settings must show Asia/Dhaka');
     assert.ok(settings.includes('DD-MM-YYYY'), 'Admin settings must show DD-MM-YYYY');
 
-    const customerHeader = fs.readFileSync(
-      path.join(CUSTOMER_ROOT, 'src/components/customer/Header.tsx'),
-      'utf8'
-    );
+    const customerHeaderPath = path.join(CUSTOMER_ROOT, 'src/components/customer/Header.tsx');
+    if (!fs.existsSync(customerHeaderPath)) {
+      t.skip('Customer UI repository is not checked out alongside this Admin repository in CI.');
+      return;
+    }
+    const customerHeader = fs.readFileSync(customerHeaderPath, 'utf8');
     assert.ok(customerHeader.includes("code: 'en'"), 'Customer header must support EN');
     assert.ok(customerHeader.includes("code: 'bn'"), 'Customer header must support Bangla');
     assert.ok(!customerHeader.includes("code: 'ar'"), 'Arabic language option must be removed');

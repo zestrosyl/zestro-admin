@@ -1,19 +1,17 @@
-name = "zestro-admin-api"
+name = "zestro-admin-api-auth-staging"
 main = "src/index.ts"
-compatibility_date = "2024-11-14"
+compatibility_date = "2026-11-15"
 workers_dev = true
 
-[vars]
-ALLOWED_ORIGINS = "https://zestro-admin.pages.dev,https://live-backend-nov-14-2026.zestro-admin.pages.dev"
-ACCESS_TEAM_DOMAIN = "icy-wave-d29d.cloudflareaccess.com"
-ACCESS_AUD = "46d30912b2ddf47b1b05c8929045e3b5f54f03dfe1ea677cd7be243ebed7c902"
-
+# Dedicated staging database only. This UUID is not the production D1 UUID.
 [[d1_databases]]
 binding = "DB"
-database_name = "zestro-saas-db"
-database_id = "7062f9eb-889b-46c1-87f4-03270a50b5b8"
+database_name = "zestro-auth-staging-20261115"
+database_id = "db949199-24f0-4c8c-8694-c06f59168d62"
 migrations_dir = "migrations"
 
-[[r2_buckets]]
-binding = "MEDIA"
-bucket_name = "zestro-media"
+# The staging Worker serves the admin API. Media APIs are not part of auth validation.
+[vars]
+ALLOWED_ORIGINS = "https://zestro-admin.pages.dev"
+BETTER_AUTH_URL = "https://zestro-admin-api-auth-staging.zestro-syl.workers.dev"
+ADMIN_APP_URL = "https://zestro-admin.pages.dev"

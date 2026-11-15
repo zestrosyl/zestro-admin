@@ -38,6 +38,7 @@ import { PromotionsModule } from './modules/PromotionsModule';
 import { StaffModule } from './modules/StaffModule';
 import { SettingsModule } from './modules/SettingsModule';
 import { ReportsModule } from './modules/ReportsModule';
+import { AuthPage, ResetPasswordPage, AcceptInvitationPage } from './modules/AuthPage';
 
 const EMPTY_HOMEPAGE_CONFIG: HomepageConfig = {
   heroImageKey: '',
@@ -111,6 +112,8 @@ export function App() {
   const [openCreateMenuSignal, setOpenCreateMenuSignal] = useState(0);
 
   const [bootstrapping, setBootstrapping] = useState(true);
+  const [authResolved, setAuthResolved] = useState(false);
+  const [hasAuthSession, setHasAuthSession] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [fatalError, setFatalError] = useState<string | null>(null);
   const [currentUser, setCurrentUser] = useState<AuthenticatedAdminUser | null>(null);
@@ -322,8 +325,47 @@ export function App() {
   );
 
   useEffect(() => {
+    let cancelled = false;
+    const resolveSession = async () => {
+      try {
+        const session = await adminApi('/api/auth/get-session');
+        const user = session && typeof session === 'object' && 'user' in session
+          ? (session as { user?: unknown }).user
+          : null;
+        if (user) {
+          setHasAuthSession(true);
+          await loadAllLiveData(false);
+        } else {
+          setBootstrapping(false);
+        }
+      } catch {
+        setBootstrapping(false);
+      } finally {
+        if (!cancelled) setAuthResolved(true);
+      }
+    };
+    void resolveSession();
+    return () => { cancelled = true; };
+  }, [loadAllLiveData]);
+
+  const handleAuthenticated = useCallback(() => {
+    setHasAuthSession(true);
+    setBootstrapping(true);
+    setFatalError(null);
     void loadAllLiveData(false);
   }, [loadAllLiveData]);
+
+  const handleAuthSignOut = useCallback(async () => {
+    try {
+      await adminApi('/api/auth/sign-out', 'POST');
+    } finally {
+      setHasAuthSession(false);
+      setCurrentUser(null);
+      setTenant(null);
+      setFatalError(null);
+      setBootstrapping(false);
+    }
+  }, []);
 
   // Poll live operational queues (orders, waiter calls, tables, activity) every 20s while visible
   useEffect(() => {
@@ -355,6 +397,37 @@ export function App() {
     (o) => o.status === 'Pending' || o.status === 'Preparing'
   ).length;
   const incomingWaiterCallsCount = waiterCalls.filter((w) => w.status === 'Incoming').length;
+
+  if (window.location.pathname === '/reset-password') return <ResetPasswordPage />;
+  if (window.location.pathname === '/accept-invitation') return <AcceptInvitationPage />;
+
+  if (!authResolved && bootstrapping) {
+    return <div className="flex min-h-screen items-center justify-center bg-[#F5F5F5] text-sm text-neutral-500">Loading ZESTRO Admin…</div>;
+  }
+
+  if (authResolved && hasAuthSession && !currentUser && !bootstrapping) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-[#F5F5F5] px-4 py-10">
+        <section className="w-full max-w-lg rounded-2xl border border-rose-200 bg-white p-8 text-center">
+          <h1 className="text-xl font-semibold text-[#111111]">Restaurant access is not active</h1>
+          <p className="mt-3 text-sm text-neutral-600">
+            {fatalError || 'Your login is valid, but no active restaurant membership is linked to this account.'}
+          </p>
+          <p className="mt-2 text-xs text-neutral-500">
+            Ask the restaurant owner to complete the secure account invitation or owner migration.
+          </p>
+          <button type="button" onClick={() => void handleAuthSignOut()}
+            className="mt-6 rounded-xl border border-[#E5E7EB] px-5 py-2.5 text-sm font-semibold text-neutral-700">
+            Sign out
+          </button>
+        </section>
+      </main>
+    );
+  }
+
+  if (authResolved && !hasAuthSession && !currentUser && !bootstrapping) {
+    return <AuthPage onAuthenticated={handleAuthenticated} />;
+  }
 
   return (
     <div className="flex min-h-screen bg-[#F5F5F5] text-[#111111]">
@@ -896,6 +969,10 @@ export function App() {
                       notify(error instanceof Error ? error.message : 'Staff save failed', 'warning');
                       return false;
                     }
+                  }}
+                  onReinviteStaff={async (id) => {
+                    try { await adminApi('/api/staff/reinvite', 'POST', { membershipId: id }); notify('Invitation email resent'); return true; }
+                    catch (error) { notify(error instanceof Error ? error.message : 'Invitation retry failed', 'warning'); return false; }
                   }}
                   onDeleteStaff={(id) => {
                     void adminApi(`/api/staff/${id}`, 'DELETE')

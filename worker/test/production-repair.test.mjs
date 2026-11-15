@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, it, before, after } from 'node:test';
 import esbuild from 'esbuild';
 import { Miniflare } from 'miniflare';
-import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from 'jose';
+import { createLocalJWKSet, exportJWK, generateKeyPair, jwtVerify, SignJWT } from 'jose';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const WORKER_ROOT = path.resolve(__dirname, '..');
@@ -162,10 +162,63 @@ describe('ZESTRO Production Functionality Repair — Full End-to-End Suite', () 
       ACCESS_TEAM_DOMAIN: TEAM_DOMAIN,
       ACCESS_AUD,
       ALLOWED_ORIGINS: 'https://zestro-admin.pages.dev,https://zestro-customer-website.pages.dev',
+      BETTER_AUTH_SECRET: 'integration-test-secret-minimum-32-characters-long',
+      BETTER_AUTH_URL: 'https://auth-test.zestro.invalid',
+      ADMIN_APP_URL: 'https://zestro-admin.pages.dev',
+      RESEND_API_KEY: 'test-resend-key',
+      RESEND_FROM_EMAIL: 'no-reply@zestro.test',
     };
 
+    // The production Worker authenticates Better Auth sessions. This suite
+    // injects a test-only resolver so the existing CRUD/RBAC regression cases
+    // can keep exercising tenant logic without relying on production secrets.
     adminHandler = adminMod.createAdminHandler({
-      keySetOverride: localJwks,
+      sessionResolver: async (req, env) => {
+        let subject = '';
+        const cookie = req.headers.get('cookie') || '';
+        const sessionCookie = cookie.split(';').map((part) => part.trim())
+          .find((part) => /^(?:__Secure-|__Host-)?better-auth\.session_token=/i.test(part));
+        if (sessionCookie) {
+          subject = sessionCookie.slice(sessionCookie.indexOf('=') + 1);
+        } else {
+          const token = req.headers.get('Cf-Access-Jwt-Assertion');
+          if (!token) return { kind: 'unauthenticated', message: 'Authentication required' };
+          try {
+            const { payload } = await jwtVerify(token, localJwks, {
+              issuer: TEAM_DOMAIN,
+              audience: ACCESS_AUD,
+            });
+            subject = String(payload.sub || '');
+          } catch {
+            return { kind: 'unauthenticated', message: 'Authentication required' };
+          }
+        }
+        if (!subject) return { kind: 'unauthenticated', message: 'Authentication required' };
+
+        const requestedRestaurantId =
+          req.headers.get('X-Restaurant-Id') || new URL(req.url).searchParams.get('restaurantId') || '';
+        const memberSql = `
+          SELECT m.id, m.restaurant_id, m.auth_subject, m.email, m.display_name, m.role,
+            COALESCE(m.job_title, '') AS job_title, r.name AS restaurant_name,
+            r.slug AS restaurant_slug, r.currency AS restaurant_currency,
+            r.timezone AS restaurant_timezone, r.status AS restaurant_status
+          FROM memberships m JOIN restaurants r ON r.id = m.restaurant_id
+          WHERE m.auth_subject = ? AND m.status = 'active' AND r.status = 'active'
+        `;
+        const member = requestedRestaurantId
+          ? await env.DB.prepare(memberSql + ' AND m.restaurant_id = ? LIMIT 1')
+              .bind(subject, requestedRestaurantId).first()
+          : await env.DB.prepare(memberSql + ' ORDER BY m.created_at ASC LIMIT 1')
+              .bind(subject).first();
+        if (member) return { kind: 'ok', member };
+        const otherTenant = await env.DB.prepare(
+          `SELECT m.id FROM memberships m JOIN restaurants r ON r.id = m.restaurant_id
+           WHERE m.auth_subject = ? AND m.status = 'active' AND r.status = 'active' LIMIT 1`
+        ).bind(subject).first();
+        return otherTenant
+          ? { kind: 'forbidden', message: 'Access denied for requested tenant' }
+          : { kind: 'forbidden', message: 'No active membership is linked to this account' };
+      },
     });
   });
 
@@ -179,10 +232,15 @@ describe('ZESTRO Production Functionality Repair — Full End-to-End Suite', () 
       path.join(WORKER_ROOT, 'migrations/0002_production_functionality_repair.sql'),
       'utf8'
     );
+    const mig3 = fs.readFileSync(
+      path.join(WORKER_ROOT, 'migrations/0003_better_auth.sql'),
+      'utf8'
+    );
 
     // Fresh D1 migration test
     await execSqlScript(d1, mig1);
     await execSqlScript(d1, mig2);
+    await execSqlScript(d1, mig3);
 
     const tablesRes = await d1
       .prepare(
@@ -313,12 +371,21 @@ describe('ZESTRO Production Functionality Repair — Full End-to-End Suite', () 
 
     // Owner A invites a Server ('staff' role) and a Manager ('manager' role)
     const ownerAJwt = await signAccessJwt({ email: 'owner-a@zestro.test', sub: 'sub-owner-a' });
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = async (input, init) => {
+      const target = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      if (target === 'https://api.resend.com/emails') {
+        return new Response(JSON.stringify({ id: 'test-email-id' }), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      return realFetch(input, init);
+    };
     const inviteStaffRes = await adminFetch('/api/staff', {
       method: 'POST',
       jwt: ownerAJwt,
       json: { name: 'Cashier One', email: 'cashier@zestro.test', role: 'Server', phone: '01700000001' },
     });
-    assert.equal(inviteStaffRes.status, 201);
+    globalThis.fetch = realFetch;
+    assert.equal(inviteStaffRes.status, 201, await inviteStaffRes.clone().text());
     const invitedStaff = await inviteStaffRes.json();
 
     const inviteManagerRes = await adminFetch('/api/staff', {
@@ -326,7 +393,7 @@ describe('ZESTRO Production Functionality Repair — Full End-to-End Suite', () 
       jwt: ownerAJwt,
       json: { name: 'Floor Manager', email: 'manager@zestro.test', role: 'Manager' },
     });
-    assert.equal(inviteManagerRes.status, 201);
+    assert.equal(inviteManagerRes.status, 201, await inviteManagerRes.clone().text());
 
     // Seed a read-only viewer in D1 to verify viewer RBAC too
     await d1
@@ -337,8 +404,17 @@ describe('ZESTRO Production Functionality Repair — Full End-to-End Suite', () 
       .bind(TENANT_A_ID)
       .run();
 
-    // Invited cashier logs in -> status automatically transitions 'invited' -> 'active' and binds auth_subject
+    // Email equality alone must never activate an invitation. The new identity
+    // is denied until a separately verified invitation-acceptance step writes
+    // its Better Auth user ID to auth_subject and activates the membership.
     const cashierJwt = await signAccessJwt({ email: 'cashier@zestro.test', sub: 'sub-cashier-1' });
+    const cashierBeforeAcceptance = await adminFetch('/api/me', { jwt: cashierJwt });
+    assert.equal(cashierBeforeAcceptance.status, 403);
+
+    await d1.prepare(
+      `UPDATE memberships SET auth_subject = ?, status = 'active' WHERE id = ? AND status = 'invited'`
+    ).bind('sub-cashier-1', invitedStaff.id).run();
+
     const cashierMeRes = await adminFetch('/api/me', { jwt: cashierJwt });
     assert.equal(cashierMeRes.status, 200);
     const cashierMe = await cashierMeRes.json();
@@ -372,6 +448,9 @@ describe('ZESTRO Production Functionality Repair — Full End-to-End Suite', () 
     assert.equal(viewerMutateSettings.status, 403);
 
     // Manager CANNOT invite/manage staff
+    await d1.prepare(
+      `UPDATE memberships SET auth_subject = ?, status = 'active' WHERE email = ? AND restaurant_id = ? AND status = 'invited'`
+    ).bind('sub-manager-1', 'manager@zestro.test', TENANT_A_ID).run();
     const managerJwt = await signAccessJwt({ email: 'manager@zestro.test', sub: 'sub-manager-1' });
     const managerStaffAttempt = await adminFetch('/api/staff', {
       method: 'POST',
@@ -388,7 +467,7 @@ describe('ZESTRO Production Functionality Repair — Full End-to-End Suite', () 
     assert.equal(deleteLastOwner.status, 400);
   });
 
-  it('3. Pages /api/* Proxy & Origin Security: forwards Access cookie/JWT, blocks untrusted Origin CSRF', async () => {
+  it('3. Pages /api/* Proxy & Origin Security: forwards Better Auth session cookie and blocks untrusted Origin CSRF', async () => {
     const ownerAJwt = await signAccessJwt({ email: 'owner-a@zestro.test', sub: 'sub-owner-a' });
     const origFetch = globalThis.fetch;
     globalThis.fetch = async (urlOrReq, init) => {
@@ -402,7 +481,7 @@ describe('ZESTRO Production Functionality Repair — Full End-to-End Suite', () 
         method: 'POST',
         headers: {
           Origin: 'https://evil-attacker.example',
-          Cookie: `CF_Authorization=${ownerAJwt}`,
+          Cookie: `better-auth.session_token=sub-owner-a`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ name: 'CSRF Category' }),
@@ -423,12 +502,12 @@ describe('ZESTRO Production Functionality Repair — Full End-to-End Suite', () 
       });
       assert.equal(noCookieRes.status, 401);
 
-      // Legitimate same-origin browser request with CF_Authorization cookie -> 200
+      // Legitimate same-origin browser request with Better Auth session cookie -> 200
       const legitReq = new Request('https://zestro-admin.pages.dev/api/me', {
         method: 'GET',
         headers: {
           Origin: 'https://zestro-admin.pages.dev',
-          Cookie: `CF_Authorization=${ownerAJwt}`,
+          Cookie: `better-auth.session_token=sub-owner-a`,
         },
       });
       const legitRes = await pagesProxyOnRequest({
@@ -721,7 +800,7 @@ describe('ZESTRO Production Functionality Repair — Full End-to-End Suite', () 
       jwt: cashierJwt,
       json: { status: 'acknowledged' },
     });
-    assert.equal(ackRes.status, 200);
+    assert.equal(ackRes.status, 200, await ackRes.clone().text());
 
     const resolveRes = await adminFetch(`/api/waiter-calls/${waiterData1.id}`, {
       method: 'PATCH',

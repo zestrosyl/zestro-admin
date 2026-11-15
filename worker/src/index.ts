@@ -1,10 +1,11 @@
-import { createRemoteJWKSet, jwtVerify, type JWTVerifyGetKey } from 'jose';
+import { authenticateSession, type SessionAuthEnv, type SessionAuthOutcome } from './auth-middleware';
+import { handleAuthRequest, createInvitationAuthUser } from './auth-schema';
+import { issueInvitation, getInvitation, reserveInvitation, attachAuthUserToInvitation, activateInvitationMembership, revokeInvitation } from './auth-invitations';
+import { sendInvitationEmail } from './auth-email';
 
-export interface Env {
+export interface Env extends SessionAuthEnv {
   DB: D1Database;
   MEDIA: R2Bucket;
-  ACCESS_TEAM_DOMAIN: string;
-  ACCESS_AUD: string;
   ALLOWED_ORIGINS: string;
 }
 
@@ -26,24 +27,10 @@ interface Member {
   restaurant_status: string;
 }
 
-type AuthOutcome =
-  | { kind: 'ok'; member: Member }
-  | { kind: 'unauthenticated'; message: string }
-  | { kind: 'forbidden'; message: string };
-
+// Dependency injection is available only to unit tests. The exported Worker
+// uses authenticateSession by default for every business API route.
 export interface AdminWorkerOptions {
-  keySetOverride?: JWTVerifyGetKey | CryptoKey | Uint8Array;
-}
-
-const jwksCache = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
-
-function getCachedJwks(issuer: string): ReturnType<typeof createRemoteJWKSet> {
-  let cached = jwksCache.get(issuer);
-  if (!cached) {
-    cached = createRemoteJWKSet(new URL(`${issuer}/cdn-cgi/access/certs`));
-    jwksCache.set(issuer, cached);
-  }
-  return cached;
+  sessionResolver?: (req: Request, env: Env) => Promise<SessionAuthOutcome>;
 }
 
 const uid = () => crypto.randomUUID();
@@ -80,20 +67,6 @@ function withCors(response: Response, origin: string | null, env: Env): Response
   headers.set('x-content-type-options', 'nosniff');
   headers.set('referrer-policy', 'strict-origin-when-cross-origin');
   return new Response(response.body, { status: response.status, headers });
-}
-
-function extractToken(req: Request): string | null {
-  const header = req.headers.get('Cf-Access-Jwt-Assertion');
-  if (header && header.trim()) return header.trim();
-  const cookie = req.headers.get('cookie') || '';
-  for (const part of cookie.split(';')) {
-    const [k, ...rest] = part.trim().split('=');
-    if (k === 'CF_Authorization' && rest.length > 0) {
-      const val = rest.join('=').trim();
-      if (val) return val;
-    }
-  }
-  return null;
 }
 
 function safeJsonParse<T>(raw: string | null | undefined, fallback: T): T {
@@ -168,133 +141,6 @@ const canManage = (m: Member): boolean =>
 
 const canManageStaff = (m: Member): boolean =>
   ['owner', 'admin'].includes(m.role);
-
-async function authenticate(
-  req: Request,
-  env: Env,
-  options?: AdminWorkerOptions
-): Promise<AuthOutcome> {
-  const token = extractToken(req);
-  const teamDomain = (env.ACCESS_TEAM_DOMAIN || '')
-    .trim()
-    .replace(/^https?:\/\//i, '')
-    .replace(/\/+$/, '');
-  const aud = (env.ACCESS_AUD || '').trim();
-  if (!token || !teamDomain || !aud || aud.startsWith('replace-')) {
-    return { kind: 'unauthenticated', message: 'Authentication required' };
-  }
-
-  let subject = '';
-  let email = '';
-  try {
-    const issuer = `https://${teamDomain}`;
-    const keyOrSet = options?.keySetOverride ?? getCachedJwks(issuer);
-    const { payload } = await jwtVerify(token, keyOrSet as JWTVerifyGetKey, {
-      issuer,
-      audience: aud,
-    });
-    subject = String(payload.sub || '').trim();
-    email = String(payload.email || '').trim().toLowerCase();
-    if (!subject || !email) {
-      return { kind: 'unauthenticated', message: 'Invalid identity token claims' };
-    }
-  } catch {
-    return { kind: 'unauthenticated', message: 'Invalid or expired authentication token' };
-  }
-
-  const url = new URL(req.url);
-  const requestedRestaurantId = (
-    req.headers.get('X-Restaurant-Id') ||
-    url.searchParams.get('restaurantId') ||
-    ''
-  ).trim();
-
-  const baseSelect = `
-    SELECT
-      m.id,
-      m.restaurant_id,
-      m.auth_subject,
-      m.email,
-      m.display_name,
-      m.role,
-      COALESCE(m.job_title, '') AS job_title,
-      r.name AS restaurant_name,
-      r.slug AS restaurant_slug,
-      r.currency AS restaurant_currency,
-      r.timezone AS restaurant_timezone,
-      r.status AS restaurant_status
-    FROM memberships m
-    JOIN restaurants r ON r.id = m.restaurant_id
-  `;
-
-  const roleOrder = `
-    ORDER BY
-      CASE m.role
-        WHEN 'owner' THEN 1
-        WHEN 'admin' THEN 2
-        WHEN 'manager' THEN 3
-        WHEN 'staff' THEN 4
-        ELSE 5
-      END,
-      m.created_at ASC
-    LIMIT 1
-  `;
-
-  let member: Member | null = null;
-  if (requestedRestaurantId) {
-    member = await env.DB.prepare(
-      `${baseSelect} WHERE m.restaurant_id = ? AND m.auth_subject = ? AND lower(m.email) = ? AND m.status = 'active' AND r.status = 'active' LIMIT 1`
-    )
-      .bind(requestedRestaurantId, subject, email)
-      .first<Member>();
-  } else {
-    member = await env.DB.prepare(
-      `${baseSelect} WHERE m.auth_subject = ? AND lower(m.email) = ? AND m.status = 'active' AND r.status = 'active' ${roleOrder}`
-    )
-      .bind(subject, email)
-      .first<Member>();
-  }
-
-  // First-time Cloudflare Access sign-in for an invited team member: bind verified subject
-  if (!member) {
-    const invitedQuery = requestedRestaurantId
-      ? `${baseSelect} WHERE m.restaurant_id = ? AND lower(m.email) = ? AND m.status IN ('invited', 'active') AND (m.auth_subject LIKE 'invited:%' OR m.auth_subject LIKE 'pending:%') AND r.status = 'active' LIMIT 1`
-      : `${baseSelect} WHERE lower(m.email) = ? AND m.status IN ('invited', 'active') AND (m.auth_subject LIKE 'invited:%' OR m.auth_subject LIKE 'pending:%') AND r.status = 'active' ${roleOrder}`;
-
-    const pendingMember = requestedRestaurantId
-      ? await env.DB.prepare(invitedQuery).bind(requestedRestaurantId, email).first<Member>()
-      : await env.DB.prepare(invitedQuery).bind(email).first<Member>();
-
-    if (pendingMember) {
-      await env.DB.prepare(
-        `UPDATE memberships SET auth_subject = ?, status = 'active' WHERE id = ? AND restaurant_id = ?`
-      )
-        .bind(subject, pendingMember.id, pendingMember.restaurant_id)
-        .run();
-      member = { ...pendingMember, auth_subject: subject };
-    }
-  }
-
-  if (!member) {
-    if (requestedRestaurantId) {
-      // Distinguish cross-tenant access attempt by an otherwise valid member from completely unknown user
-      const anyMembership = await env.DB.prepare(
-        `SELECT m.id FROM memberships m JOIN restaurants r ON r.id = m.restaurant_id WHERE lower(m.email) = ? AND m.status IN ('active', 'invited') AND r.status = 'active' LIMIT 1`
-      )
-        .bind(email)
-        .first();
-      if (anyMembership) {
-        return { kind: 'forbidden', message: 'Access denied for the requested restaurant tenant' };
-      }
-    }
-    return {
-      kind: 'forbidden',
-      message: 'Your account is not registered as an active staff member for this restaurant.',
-    };
-  }
-
-  return { kind: 'ok', member };
-}
 
 async function audit(
   env: Env,
@@ -651,7 +497,8 @@ function mapGalleryRow(row: Record<string, unknown>) {
 async function route(
   req: Request,
   env: Env,
-  options?: AdminWorkerOptions
+  ctx?: ExecutionContext,
+  sessionResolver?: (req: Request, env: Env) => Promise<SessionAuthOutcome>
 ): Promise<Response> {
   const url = new URL(req.url);
   const path = url.pathname;
@@ -664,17 +511,73 @@ async function route(
     return json({ ok: true, service: 'zestro-admin-api', time: new Date().toISOString() });
   }
 
-  if (!path.startsWith('/api/')) {
-    return fail('Not found', 404);
+  // Public invitation acceptance is a narrow exception to the session boundary.
+  if (path === '/api/auth/invitation-preview' && req.method === 'GET') {
+    const token = url.searchParams.get('token') || '';
+    const invitation = await getInvitation(env, token);
+    if (!invitation) return fail('Invitation is invalid, expired, revoked, or already used.', 400);
+    return json({ email: invitation.email, name: invitation.display_name, expiresAt: invitation.expires_at });
   }
 
-  const auth = await authenticate(req, env, options);
-  if (auth.kind === 'unauthenticated') {
-    return fail(auth.message, 401);
+  if (path === '/api/auth/accept-invitation' && req.method === 'POST') {
+    const body = await req.json<Record<string, unknown>>();
+    const token = String(body.token || '');
+    const password = String(body.password || '');
+    if (password.length < 12 || password.length > 128) return fail('Password must be between 12 and 128 characters.', 400);
+    const invitation = await getInvitation(env, token);
+    if (!invitation) return fail('Invitation is invalid, expired, revoked, or already used.', 400);
+    if (!await reserveInvitation(env, invitation)) return fail('This invitation is being accepted. Please retry after a few minutes.', 409);
+
+    // Resume only when this exact invitation already recorded the Better Auth
+    // user ID. An unrelated pre-existing account is never auto-linked by email.
+    let authUserId = String(invitation.auth_user_id || '');
+    if (authUserId) {
+      const linkedUser = await env.DB.prepare(
+        'SELECT id FROM user WHERE id = ? AND lower(email) = lower(?) LIMIT 1'
+      ).bind(authUserId, invitation.email).first<{id:string}>();
+      if (!linkedUser) return fail('Invitation account link needs support recovery. No membership access was granted.', 503);
+    } else {
+      const existingUser = await env.DB.prepare(
+        'SELECT id FROM user WHERE lower(email) = lower(?) LIMIT 1'
+      ).bind(invitation.email).first<{id:string}>();
+      if (existingUser) return fail('An account already exists for this email. Contact the restaurant owner to issue a verified account-link invitation.', 409);
+      try {
+        const created = await createInvitationAuthUser(env, {
+          email: invitation.email, name: invitation.display_name, password
+        });
+        authUserId = String((created as any)?.user?.id || (created as any)?.id || '');
+        if (!authUserId) throw new Error('Better Auth did not return a user identity.');
+      } catch (error) {
+        console.error('Invitation account creation failed:', error);
+        return fail('Unable to create the account. The invitation remains retryable; please try again.', 503);
+      }
+      if (!await attachAuthUserToInvitation(env, invitation, authUserId)) {
+        return fail('Account was created but its invitation link could not be persisted. Support recovery is required; no access was granted.', 503);
+      }
+    }
+
+    const latestInvitation = await getInvitation(env, token);
+    if (!latestInvitation || !await activateInvitationMembership(env, latestInvitation, authUserId)) {
+      return fail('Account created but membership activation is pending recovery. No access has been granted.', 503);
+    }
+    return json({ ok: true, email: invitation.email });
   }
-  if (auth.kind === 'forbidden') {
-    return fail(auth.message, 403);
+
+  // Never expose Better Auth's generic signup endpoint. Account creation is
+  // performed only inside the one-time invitation acceptance handler above.
+  if (path === '/api/auth/sign-up/email' || path === '/api/auth/sign-up') {
+    return fail('Open signup is disabled. Use a valid restaurant invitation.', 404);
   }
+
+  if (path.startsWith('/api/auth/')) {
+    return handleAuthRequest(req, env, ctx);
+  }
+
+  if (!path.startsWith('/api/')) return fail('Not found', 404);
+
+  const auth = await (sessionResolver || authenticateSession)(req, env);
+  if (auth.kind === 'unauthenticated') return fail(auth.message, 401);
+  if (auth.kind === 'forbidden') return fail(auth.message, 403);
   const member = auth.member;
   const rid = member.restaurant_id;
 
@@ -2148,69 +2051,61 @@ async function route(
     const b = await req.json<Record<string, unknown>>();
     const name = String(b.name || '').trim();
     const email = String(b.email || '').trim().toLowerCase();
-    if (!name || !email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      return fail('Valid staff full name and email address are required');
-    }
-
+    if (!name || !email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return fail('Valid staff full name and email are required.');
     const { role: dbRole, jobTitle } = mapUiRoleToDb(String(b.role || 'Server'));
-    if (dbRole === 'owner' && member.role !== 'owner') {
-      return fail('Only a restaurant owner can grant Owner role.', 403);
-    }
-
-    const existing = await env.DB.prepare(
-      `SELECT id, status FROM memberships WHERE restaurant_id = ? AND lower(email) = ? LIMIT 1`
-    )
-      .bind(rid, email)
-      .first<{ id: string; status: string }>();
-    if (existing && existing.status !== 'disabled') {
-      return fail(`A team member with email "${email}" already exists.`, 409);
-    }
-
-    const phone = String(b.phone || '').trim();
-    const shift = String(b.shift || 'Flexible Shift').trim();
-    const rawDuty = String(b.status || 'Active');
-    const dutyStatus =
-      rawDuty === 'On Shift' || rawDuty === 'Off Duty' ? rawDuty : 'Active';
-
-    let staffId = existing?.id || uid();
-    if (existing) {
+    if (dbRole === 'owner' && member.role !== 'owner') return fail('Only the restaurant owner can grant Owner role.',403);
+    const phone=String(b.phone||'').trim(), shift=String(b.shift||'Flexible Shift').trim();
+    const duty=String(b.status||'Active');
+    const dutyStatus=duty==='On Shift'||duty==='Off Duty'?duty:'Active';
+    const existing=await env.DB.prepare(
+      `SELECT id,status FROM memberships WHERE restaurant_id=? AND lower(email)=? LIMIT 1`
+    ).bind(rid,email).first<{id:string;status:string}>();
+    if(existing && existing.status!=='disabled') return fail('A team member with this email already exists.',409);
+    const staffId=existing?.id||uid();
+    if(existing) {
       await env.DB.prepare(
-        `UPDATE memberships
-         SET display_name = ?, role = ?, job_title = ?, phone = ?, shift = ?,
-             duty_status = ?, status = 'invited', auth_subject = ?
-         WHERE id = ? AND restaurant_id = ?`
-      )
-        .bind(name, dbRole, jobTitle, phone, shift, dutyStatus, `invited:${uid()}`, staffId, rid)
-        .run();
+        `UPDATE memberships SET display_name=?,role=?,job_title=?,phone=?,shift=?,duty_status=?,
+          status='invited',auth_subject='invited:'||id WHERE id=? AND restaurant_id=?`
+      ).bind(name,dbRole,jobTitle,phone,shift,dutyStatus,staffId,rid).run();
     } else {
       await env.DB.prepare(
-        `INSERT INTO memberships (
-           id, restaurant_id, auth_subject, email, display_name, role, status,
-           phone, shift, job_title, duty_status
-         ) VALUES (?, ?, ?, ?, ?, ?, 'invited', ?, ?, ?, ?)`
-      )
-        .bind(
-          staffId,
-          rid,
-          `invited:${uid()}`,
-          email,
-          name,
-          dbRole,
-          phone,
-          shift,
-          jobTitle,
-          dutyStatus
-        )
-        .run();
+        `INSERT INTO memberships(id,restaurant_id,auth_subject,email,display_name,role,status,phone,shift,job_title,duty_status)
+         VALUES(?,?, 'invited:'||?, ?, ?, ?, 'invited', ?, ?, ?, ?)`
+      ).bind(staffId,rid,staffId,email,name,dbRole,phone,shift,jobTitle,dutyStatus).run();
     }
+    const invite=await issueInvitation(env,{restaurantId:rid,membershipId:staffId,createdByMembershipId:member.id,expiresInHours:48});
+    try {
+      await sendInvitationEmail(env,{to:email,name,token:invite.token,expiresAt:invite.expiresAt});
+      await env.DB.prepare(`UPDATE auth_invitation_tokens SET delivery_status='sent' WHERE id=?`).bind(invite.invitationId).run();
+    } catch(error) {
+      await env.DB.prepare(`UPDATE auth_invitation_tokens SET delivery_status='failed' WHERE id=?`).bind(invite.invitationId).run();
+      console.error('Invitation email send failed:',error);
+      await audit(env,member,'staff.invitation_delivery_failed','membership',staffId,{role:jobTitle});
+      return fail('Staff member was saved as invited, but the invitation email could not be sent. Retry the invitation after email delivery is configured.',503);
+    }
+    await audit(env,member,'staff.invited','membership',staffId,{name,email,role:jobTitle});
+    const row=await env.DB.prepare(`SELECT * FROM memberships WHERE id=? AND restaurant_id=?`).bind(staffId,rid).first<Record<string,unknown>>();
+    return json(row?mapStaffRow(row):{id:staffId},201);
+  }
 
-    await audit(env, member, 'staff.created', 'membership', staffId, { name, email, role: jobTitle });
-    const row = await env.DB.prepare(
-      `SELECT * FROM memberships WHERE id = ? AND restaurant_id = ?`
-    )
-      .bind(staffId, rid)
-      .first<Record<string, unknown>>();
-    return json(row ? mapStaffRow(row) : { id: staffId }, 201);
+  if (path === '/api/staff/reinvite' && req.method === 'POST') {
+    if (!canManageStaff(member)) return fail('Only owners and admins can invite staff.',403);
+    const b=await req.json<{membershipId?:string}>(), membershipId=String(b.membershipId||'');
+    const target=await env.DB.prepare(
+      `SELECT id,email,display_name FROM memberships WHERE id=? AND restaurant_id=? AND status='invited' LIMIT 1`
+    ).bind(membershipId,rid).first<{id:string;email:string;display_name:string}>();
+    if(!target)return fail('Pending invitation not found.',404);
+    const invite=await issueInvitation(env,{restaurantId:rid,membershipId,createdByMembershipId:member.id,expiresInHours:48});
+    try {
+      await sendInvitationEmail(env,{to:target.email,name:target.display_name,token:invite.token,expiresAt:invite.expiresAt});
+      await env.DB.prepare(`UPDATE auth_invitation_tokens SET delivery_status='sent' WHERE id=?`).bind(invite.invitationId).run();
+    } catch(error) {
+      await env.DB.prepare(`UPDATE auth_invitation_tokens SET delivery_status='failed' WHERE id=?`).bind(invite.invitationId).run();
+      console.error('Invitation retry failed:',error);
+      return fail('Invitation email delivery failed; retry remains available.',503);
+    }
+    await audit(env,member,'staff.invitation_resent','membership',membershipId);
+    return json({ok:true});
   }
 
   const staffMatch = path.match(/^\/api\/staff\/([^/]+)$/);
@@ -2251,6 +2146,9 @@ async function route(
       b.email !== undefined ? String(b.email).trim().toLowerCase() : String(target.email);
     if (!name || !email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return fail('Valid name and email are required');
+    }
+    if (String(target.status) === 'invited' && email !== String(target.email).toLowerCase()) {
+      return fail('Pending invitation email cannot be changed. Revoke and create a new invitation instead.', 409);
     }
 
     if (email !== String(target.email).toLowerCase()) {
@@ -2308,10 +2206,10 @@ async function route(
       return fail('You cannot remove your own currently signed-in account.', 400);
     }
     const target = await env.DB.prepare(
-      `SELECT id, role, display_name FROM memberships WHERE id = ? AND restaurant_id = ?`
+      `SELECT id, role, display_name, status FROM memberships WHERE id = ? AND restaurant_id = ?`
     )
       .bind(staffId, rid)
-      .first<{ id: string; role: string; display_name: string }>();
+      .first<{ id: string; role: string; display_name: string; status: string }>();
     if (!target) return fail('Team member not found', 404);
     if (target.role === 'owner' && member.role !== 'owner') {
       return fail('Only an owner can remove another owner.', 403);
@@ -2325,9 +2223,12 @@ async function route(
       if (!otherOwner) return fail('Cannot remove the last restaurant owner.', 400);
     }
 
-    await env.DB.prepare(`DELETE FROM memberships WHERE id = ? AND restaurant_id = ?`)
-      .bind(staffId, rid)
-      .run();
+    await env.DB.batch([
+      env.DB.prepare(`UPDATE auth_invitation_tokens SET revoked_at=CURRENT_TIMESTAMP
+        WHERE restaurant_id=? AND membership_id=? AND consumed_at IS NULL AND revoked_at IS NULL`).bind(rid,staffId),
+      env.DB.prepare(`UPDATE memberships SET status='disabled',auth_subject='revoked:'||id
+        WHERE id=? AND restaurant_id=?`).bind(staffId,rid),
+    ]);
     await audit(env, member, 'staff.deleted', 'membership', staffId, {
       name: target.display_name,
     });
@@ -2850,13 +2751,13 @@ async function route(
 
 export function createAdminHandler(options?: AdminWorkerOptions) {
   return {
-    async fetch(req: Request, env: Env): Promise<Response> {
+    async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
       const origin = req.headers.get('Origin');
       if (origin && !parseAllowedOrigins(env).includes(origin)) {
         return withCors(fail('Origin not allowed', 403), null, env);
       }
       try {
-        const res = await route(req, env, options);
+        const res = await route(req, env, ctx, options?.sessionResolver);
         return withCors(res, origin, env);
       } catch (error) {
         console.error('ZESTRO Admin API unhandled error:', error);
