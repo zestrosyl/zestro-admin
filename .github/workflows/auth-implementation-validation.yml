@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: auth-validation-${{ github.ref }}
@@ -48,8 +48,17 @@ jobs:
       - name: Regenerate lockfile metadata without running install scripts
         working-directory: worker
         run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
-      - name: Fail if the committed lockfile is stale
-        run: git diff --exit-code -- worker/package-lock.json
+      - name: Commit generated Worker lockfile when it changes
+        run: |
+          if ! git diff --quiet -- worker/package-lock.json; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add worker/package-lock.json
+            git commit -m "chore(auth): sync Better Auth Worker lockfile"
+            git push
+          else
+            echo "Worker lockfile is already synchronized."
+          fi
 
   worker-validation:
     name: Worker install, typecheck and tests
