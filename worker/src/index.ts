@@ -1,11 +1,9 @@
 import { authenticateSession, type SessionAuthEnv, type SessionAuthOutcome } from './auth-middleware';
-import { handleAuthRequest, type AuthEnv } from './auth-schema';
+import { handleAuthRequest } from './auth-schema';
 
 export interface Env extends SessionAuthEnv {
   DB: D1Database;
   MEDIA: R2Bucket;
-  ACCESS_TEAM_DOMAIN: string;
-  ACCESS_AUD: string;
   ALLOWED_ORIGINS: string;
 }
 
