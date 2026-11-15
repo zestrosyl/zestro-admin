@@ -38,6 +38,7 @@ import { PromotionsModule } from './modules/PromotionsModule';
 import { StaffModule } from './modules/StaffModule';
 import { SettingsModule } from './modules/SettingsModule';
 import { ReportsModule } from './modules/ReportsModule';
+import { AuthPage } from './modules/AuthPage';
 
 const EMPTY_HOMEPAGE_CONFIG: HomepageConfig = {
   heroImageKey: '',
@@ -111,6 +112,7 @@ export function App() {
   const [openCreateMenuSignal, setOpenCreateMenuSignal] = useState(0);
 
   const [bootstrapping, setBootstrapping] = useState(true);
+  const [authResolved, setAuthResolved] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [fatalError, setFatalError] = useState<string | null>(null);
   const [currentUser, setCurrentUser] = useState<AuthenticatedAdminUser | null>(null);
@@ -322,6 +324,27 @@ export function App() {
   );
 
   useEffect(() => {
+    let cancelled = false;
+    adminApi('/api/auth/get-session')
+      .then((session) => {
+        if (!cancelled && session && typeof session === 'object' && 'user' in session && (session as {user?:unknown}).user) {
+          void loadAllLiveData(false);
+        } else if (!cancelled) {
+          setBootstrapping(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setBootstrapping(false);
+      })
+      .finally(() => {
+        if (!cancelled) setAuthResolved(true);
+      });
+    return () => { cancelled = true; };
+  }, [loadAllLiveData]);
+
+  const handleAuthenticated = useCallback(() => {
+    setBootstrapping(true);
+    setFatalError(null);
     void loadAllLiveData(false);
   }, [loadAllLiveData]);
 
@@ -355,6 +378,14 @@ export function App() {
     (o) => o.status === 'Pending' || o.status === 'Preparing'
   ).length;
   const incomingWaiterCallsCount = waiterCalls.filter((w) => w.status === 'Incoming').length;
+
+  if (!authResolved && bootstrapping) {
+    return <div className="flex min-h-screen items-center justify-center bg-[#F5F5F5] text-sm text-neutral-500">Loading ZESTRO Admin…</div>;
+  }
+
+  if (authResolved && !currentUser && !bootstrapping) {
+    return <AuthPage onAuthenticated={handleAuthenticated} />;
+  }
 
   return (
     <div className="flex min-h-screen bg-[#F5F5F5] text-[#111111]">
