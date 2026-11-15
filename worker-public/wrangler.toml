@@ -16,3 +16,18 @@ database_id = "7062f9eb-889b-46c1-87f4-03270a50b5b8"
 [[r2_buckets]]
 binding = "MEDIA"
 bucket_name = "zestro-media"
+
+# This environment is isolated to the dedicated staging D1 database.
+[env.staging]
+name = "zestro-customer-api-staging"
+
+[env.staging.vars]
+RESTAURANT_ID = "staging-customer-restaurant"
+ALLOWED_ORIGINS = "https://zestro-customer-website-staging.pages.dev"
+WHATSAPP_NUMBER = "+8800000000000"
+
+[[env.staging.d1_databases]]
+binding = "DB"
+database_name = "zestro-auth-staging-20261115"
+database_id = "db949199-24f0-4c8c-8694-c06f59168d62"
+
