@@ -75,14 +75,14 @@ export const StaffModule: React.FC<{
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-[#F3EBDD]/70">
+        <p className="text-sm text-neutral-500">
           Manage Cloudflare Access team memberships, shift schedules, and role-based dashboard permissions.
         </p>
         {canManageStaff && (
           <button
             type="button"
             onClick={openNew}
-            className="flex items-center gap-2 rounded-xl bg-[#D7A65A] px-4 py-2.5 text-sm font-semibold text-[#101B17] hover:bg-[#e3b772]"
+            className="flex items-center gap-2 rounded-xl bg-[#16A34A] px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700"
           >
             <Plus className="h-4 w-4" /> Invite Staff Member
           </button>
@@ -90,15 +90,15 @@ export const StaffModule: React.FC<{
       </div>
 
       {!canManageStaff && (
-        <div className="rounded-xl border border-[#2C3D34] bg-[#1D2922] px-4 py-3 text-xs text-[#F3EBDD]/70">
+        <div className="rounded-xl border border-[#E5E7EB] bg-white px-4 py-3 text-xs text-neutral-500">
           Only Owner and Admin accounts can add, modify, or revoke staff access.
         </div>
       )}
 
-      <div className="overflow-hidden rounded-2xl border border-[#2C3D34] bg-[#1D2922]">
+      <div className="overflow-hidden rounded-2xl border border-[#E5E7EB] bg-white">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
-            <thead className="border-b border-[#2C3D34] bg-[#101B17]/70 text-xs uppercase tracking-wider text-[#F3EBDD]/60">
+            <thead className="border-b border-[#E5E7EB] bg-[#F5F5F5] text-xs uppercase tracking-wider text-neutral-500">
               <tr>
                 <th className="px-5 py-3.5">Team Member</th>
                 <th className="px-5 py-3.5">Role</th>
@@ -107,16 +107,16 @@ export const StaffModule: React.FC<{
                 {canManageStaff && <th className="px-5 py-3.5 text-right">Actions</th>}
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#2C3D34]">
+            <tbody className="divide-y divide-[#E5E7EB]">
               {staff.map((m) => {
                 const isSelf = m.email.toLowerCase() === currentUserEmail.toLowerCase();
                 return (
-                  <tr key={m.id} className="transition hover:bg-[#101B17]/40">
+                  <tr key={m.id} className="transition hover:bg-[#F5F5F5]">
                     <td className="px-5 py-4">
-                      <p className="font-medium text-[#F3EBDD]">
-                        {m.name} {isSelf && <span className="text-xs text-[#D7A65A]">(You)</span>}
+                      <p className="font-medium text-[#111111]">
+                        {m.name} {isSelf && <span className="text-xs text-[#16A34A]">(You)</span>}
                       </p>
-                      <p className="text-xs text-[#F3EBDD]/55">
+                      <p className="text-xs text-neutral-500">
                         {m.email}
                         {m.phone ? ` • ${m.phone}` : ''}
                       </p>
@@ -126,7 +126,7 @@ export const StaffModule: React.FC<{
                         <ShieldCheck className="h-3 w-3" /> {m.role}
                       </Badge>
                     </td>
-                    <td className="px-5 py-4 text-xs text-[#F3EBDD]/75">{m.shift}</td>
+                    <td className="px-5 py-4 text-xs text-neutral-500">{m.shift}</td>
                     <td className="px-5 py-4">
                       <div className="flex flex-wrap gap-1.5">
                         <Badge
@@ -151,7 +151,7 @@ export const StaffModule: React.FC<{
                           <button
                             type="button"
                             onClick={() => openEdit(m)}
-                            className="rounded-lg border border-[#2C3D34] bg-[#101B17] p-2 text-[#F3EBDD]/80 hover:text-[#D7A65A]"
+                            className="rounded-lg border border-[#E5E7EB] bg-[#F5F5F5] p-2 text-neutral-500 hover:text-[#16A34A]"
                             aria-label={`Edit ${m.name}`}
                           >
                             <Pencil className="h-3.5 w-3.5" />
@@ -160,7 +160,7 @@ export const StaffModule: React.FC<{
                             type="button"
                             disabled={isSelf}
                             onClick={() => setDeleteTarget(m)}
-                            className="rounded-lg border border-[#2C3D34] bg-[#101B17] p-2 text-rose-300/80 hover:text-rose-300 disabled:opacity-30"
+                            className="rounded-lg border border-[#E5E7EB] bg-[#F5F5F5] p-2 text-rose-600 hover:text-rose-600 disabled:opacity-30"
                             title={isSelf ? 'You cannot revoke your own membership' : `Remove ${m.name}`}
                           >
                             <Trash2 className="h-3.5 w-3.5" />
@@ -184,44 +184,44 @@ export const StaffModule: React.FC<{
       >
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-[#F3EBDD]/75">Full Name</label>
+            <label className="mb-1.5 block text-xs font-medium text-neutral-500">Full Name</label>
             <input
               type="text"
               required
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
-              className="w-full rounded-xl border border-[#2C3D34] bg-[#101B17] px-3.5 py-2.5 text-sm text-[#F3EBDD]"
+              className="w-full rounded-xl border border-[#E5E7EB] bg-[#F5F5F5] px-3.5 py-2.5 text-sm text-[#111111]"
             />
           </div>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
-              <label className="mb-1.5 block text-xs font-medium text-[#F3EBDD]/75">Email</label>
+              <label className="mb-1.5 block text-xs font-medium text-neutral-500">Email</label>
               <input
                 type="email"
                 required
                 disabled={Boolean(editing)}
                 value={form.email}
                 onChange={(e) => setForm({ ...form, email: e.target.value })}
-                className="w-full rounded-xl border border-[#2C3D34] bg-[#101B17] px-3.5 py-2.5 text-sm text-[#F3EBDD] disabled:opacity-60"
+                className="w-full rounded-xl border border-[#E5E7EB] bg-[#F5F5F5] px-3.5 py-2.5 text-sm text-[#111111] disabled:opacity-60"
               />
             </div>
             <div>
-              <label className="mb-1.5 block text-xs font-medium text-[#F3EBDD]/75">Phone</label>
+              <label className="mb-1.5 block text-xs font-medium text-neutral-500">Phone</label>
               <input
                 type="text"
                 value={form.phone}
                 onChange={(e) => setForm({ ...form, phone: e.target.value })}
-                className="w-full rounded-xl border border-[#2C3D34] bg-[#101B17] px-3.5 py-2.5 text-sm text-[#F3EBDD]"
+                className="w-full rounded-xl border border-[#E5E7EB] bg-[#F5F5F5] px-3.5 py-2.5 text-sm text-[#111111]"
               />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="mb-1.5 block text-xs font-medium text-[#F3EBDD]/75">Role</label>
+              <label className="mb-1.5 block text-xs font-medium text-neutral-500">Role</label>
               <select
                 value={form.role}
                 onChange={(e) => setForm({ ...form, role: e.target.value as StaffRole })}
-                className="w-full rounded-xl border border-[#2C3D34] bg-[#101B17] px-3.5 py-2.5 text-sm text-[#F3EBDD]"
+                className="w-full rounded-xl border border-[#E5E7EB] bg-[#F5F5F5] px-3.5 py-2.5 text-sm text-[#111111]"
               >
                 <option value="Owner">Owner</option>
                 <option value="Manager">Manager</option>
@@ -231,13 +231,13 @@ export const StaffModule: React.FC<{
               </select>
             </div>
             <div>
-              <label className="mb-1.5 block text-xs font-medium text-[#F3EBDD]/75">Duty Status</label>
+              <label className="mb-1.5 block text-xs font-medium text-neutral-500">Duty Status</label>
               <select
                 value={form.status}
                 onChange={(e) =>
                   setForm({ ...form, status: e.target.value as StaffMember['status'] })
                 }
-                className="w-full rounded-xl border border-[#2C3D34] bg-[#101B17] px-3.5 py-2.5 text-sm text-[#F3EBDD]"
+                className="w-full rounded-xl border border-[#E5E7EB] bg-[#F5F5F5] px-3.5 py-2.5 text-sm text-[#111111]"
               >
                 <option value="On Shift">On Shift</option>
                 <option value="Active">Active</option>
@@ -246,26 +246,26 @@ export const StaffModule: React.FC<{
             </div>
           </div>
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-[#F3EBDD]/75">Shift Schedule</label>
+            <label className="mb-1.5 block text-xs font-medium text-neutral-500">Shift Schedule</label>
             <input
               type="text"
               value={form.shift}
               onChange={(e) => setForm({ ...form, shift: e.target.value })}
-              className="w-full rounded-xl border border-[#2C3D34] bg-[#101B17] px-3.5 py-2.5 text-sm text-[#F3EBDD]"
+              className="w-full rounded-xl border border-[#E5E7EB] bg-[#F5F5F5] px-3.5 py-2.5 text-sm text-[#111111]"
             />
           </div>
           <div className="flex justify-end gap-3 pt-2">
             <button
               type="button"
               onClick={() => setModalOpen(false)}
-              className="rounded-xl border border-[#2C3D34] bg-[#101B17] px-4 py-2 text-sm"
+              className="rounded-xl border border-[#E5E7EB] bg-[#F5F5F5] px-4 py-2 text-sm"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={saving}
-              className="rounded-xl bg-[#D7A65A] px-5 py-2 text-sm font-semibold text-[#101B17] disabled:opacity-50"
+              className="rounded-xl bg-[#16A34A] px-5 py-2 text-sm font-semibold text-white disabled:opacity-50"
             >
               {saving ? 'Saving...' : 'Save Member'}
             </button>

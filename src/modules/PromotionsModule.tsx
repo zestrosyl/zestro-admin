@@ -141,14 +141,14 @@ export const PromotionsModule: React.FC<{
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-[#F3EBDD]/70">
+        <p className="text-sm text-neutral-500">
           Manage homepage announcement offers and optional checkout promo codes. Active, in-date offers appear automatically on the customer website header.
         </p>
         {canManage && (
           <button
             type="button"
             onClick={openNew}
-            className="flex items-center gap-2 rounded-xl bg-[#D7A65A] px-4 py-2.5 text-sm font-semibold text-[#101B17] hover:bg-[#e3b772]"
+            className="flex items-center gap-2 rounded-xl bg-[#16A34A] px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700"
           >
             <Plus className="h-4 w-4" /> New Offer
           </button>
@@ -156,12 +156,12 @@ export const PromotionsModule: React.FC<{
       </div>
 
       {/* Live Customer Header Banner Preview */}
-      <div className="rounded-2xl border border-[#2C3D34] bg-[#1D2922] p-4">
+      <div className="rounded-2xl border border-[#E5E7EB] bg-white p-4">
         <div className="mb-2.5 flex items-center justify-between">
-          <span className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-[#D7A65A]">
+          <span className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-[#16A34A]">
             <Eye className="h-3.5 w-3.5" /> Customer Homepage Banner Preview
           </span>
-          <span className="text-[11px] text-[#F3EBDD]/60">
+          <span className="text-[11px] text-neutral-500">
             {activeHomepageOffers.length === 0
               ? 'Hidden on customer website (no active in-date offers)'
               : `${activeHomepageOffers.length} active offer${activeHomepageOffers.length > 1 ? 's' : ''} live`}
@@ -169,34 +169,34 @@ export const PromotionsModule: React.FC<{
         </div>
 
         {activeHomepageOffers.length > 0 ? (
-          <div className="flex flex-wrap items-center justify-center gap-2.5 rounded-xl border border-[#D7A65A]/30 bg-[#101B17] px-4 py-2.5 text-center text-xs text-[#F3EBDD]">
-            <Sparkles className="h-3.5 w-3.5 shrink-0 text-[#D7A65A]" />
+          <div className="flex flex-wrap items-center justify-center gap-2.5 rounded-xl border border-[#16A34A]/40 bg-[#F5F5F5] px-4 py-2.5 text-center text-xs text-[#111111]">
+            <Sparkles className="h-3.5 w-3.5 shrink-0 text-[#16A34A]" />
             {getOfferDiscountBadge(activeHomepageOffers[0], currency) && (
-              <span className="rounded-full bg-[#D7A65A] px-2.5 py-0.5 text-[11px] font-bold tracking-wide text-[#101210]">
+              <span className="rounded-full bg-[#16A34A] px-2.5 py-0.5 text-[11px] font-bold tracking-wide text-[#101210]">
                 {getOfferDiscountBadge(activeHomepageOffers[0], currency)}
               </span>
             )}
-            <span className="font-semibold text-[#F3EBDD]">{activeHomepageOffers[0].title}</span>
+            <span className="font-semibold text-[#111111]">{activeHomepageOffers[0].title}</span>
             {activeHomepageOffers[0].description && (
-              <span className="text-[#F3EBDD]/75">— {activeHomepageOffers[0].description}</span>
+              <span className="text-neutral-500">— {activeHomepageOffers[0].description}</span>
             )}
             {activeHomepageOffers[0].code && (
-              <span className="rounded-md border border-[#D7A65A]/40 bg-[#D7A65A]/10 px-2 py-0.5 font-mono text-[11px] font-semibold text-[#D7A65A]">
+              <span className="rounded-md border border-[#16A34A]/40 bg-[#16A34A]/10 px-2 py-0.5 font-mono text-[11px] font-semibold text-[#16A34A]">
                 Code: {activeHomepageOffers[0].code}
               </span>
             )}
           </div>
         ) : (
-          <div className="rounded-xl border border-dashed border-[#2C3D34] bg-[#101B17]/60 px-4 py-3 text-center text-xs text-[#F3EBDD]/50">
+          <div className="rounded-xl border border-dashed border-[#E5E7EB] bg-[#F5F5F5] px-4 py-3 text-center text-xs text-neutral-500">
             No active offers within today&apos;s date range. The announcement banner is hidden on the customer homepage.
           </div>
         )}
       </div>
 
       {promotions.length === 0 ? (
-        <div className="rounded-2xl border border-[#2C3D34] bg-[#1D2922] p-10 text-center">
-          <p className="font-serif text-lg font-semibold text-[#F3EBDD]">No offers created yet</p>
-          <p className="mt-1 text-xs text-[#F3EBDD]/60">
+        <div className="rounded-2xl border border-[#E5E7EB] bg-white p-10 text-center">
+          <p className="text-lg font-semibold text-[#111111]">No offers created yet</p>
+          <p className="mt-1 text-xs text-neutral-500">
             Create a homepage announcement offer or a checkout promo code to highlight specials for your guests.
           </p>
         </div>
@@ -208,24 +208,24 @@ export const PromotionsModule: React.FC<{
             return (
               <div
                 key={p.id}
-                className="flex flex-col rounded-2xl border border-[#2C3D34] bg-[#1D2922] p-5 transition hover:border-[#D7A65A]/45"
+                className="flex flex-col rounded-2xl border border-[#E5E7EB] bg-white p-5 transition hover:border-[#16A34A]/40"
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex items-center gap-2.5">
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#101B17] text-[#D7A65A]">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#F5F5F5] text-[#16A34A]">
                       <Tag className="h-4 w-4" />
                     </div>
                     <div className="min-w-0">
-                      <h3 className="truncate font-serif text-base font-semibold text-[#F3EBDD]">
+                      <h3 className="truncate text-base font-semibold text-[#111111]">
                         {p.title}
                       </h3>
                       <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
                         {p.code ? (
-                          <span className="font-mono text-xs font-bold text-[#D7A65A]">
+                          <span className="font-mono text-xs font-bold text-[#16A34A]">
                             {p.code}
                           </span>
                         ) : (
-                          <span className="text-[11px] text-[#F3EBDD]/50">
+                          <span className="text-[11px] text-neutral-500">
                             Homepage announcement
                           </span>
                         )}
@@ -244,26 +244,26 @@ export const PromotionsModule: React.FC<{
                   </button>
                 </div>
 
-                <p className="mt-3 flex-1 text-xs leading-relaxed text-[#F3EBDD]/70">
+                <p className="mt-3 flex-1 text-xs leading-relaxed text-neutral-500">
                   {p.description || (p.code ? `Minimum order ${formatCurrency(p.minOrder, currency)}` : 'Promotional announcement')}
                 </p>
 
-                <div className="mt-4 grid grid-cols-2 gap-2 rounded-xl border border-[#2C3D34] bg-[#101B17] p-3 text-xs">
+                <div className="mt-4 grid grid-cols-2 gap-2 rounded-xl border border-[#E5E7EB] bg-[#F5F5F5] p-3 text-xs">
                   <div>
-                    <p className="text-[#F3EBDD]/50">Highlight</p>
-                    <p className="truncate font-semibold text-[#F3EBDD]">
+                    <p className="text-neutral-500">Highlight</p>
+                    <p className="truncate font-semibold text-[#111111]">
                       {discountBadge || 'Announcement'}
                     </p>
                   </div>
                   <div>
-                    <p className="text-[#F3EBDD]/50">{p.code ? 'Redemptions' : 'Checkout'}</p>
-                    <p className="font-semibold text-[#D7A65A]">
+                    <p className="text-neutral-500">{p.code ? 'Redemptions' : 'Checkout'}</p>
+                    <p className="font-semibold text-[#16A34A]">
                       {p.code ? `${p.usageCount} uses` : 'Display only'}
                     </p>
                   </div>
                 </div>
 
-                <div className="mt-4 flex items-center justify-between border-t border-[#2C3D34] pt-3 text-xs text-[#F3EBDD]/55">
+                <div className="mt-4 flex items-center justify-between border-t border-[#E5E7EB] pt-3 text-xs text-neutral-500">
                   <span>
                     {p.validFrom ? `${p.validFrom} → ` : ''}
                     {p.validUntil || 'Ongoing'}
@@ -274,7 +274,7 @@ export const PromotionsModule: React.FC<{
                         type="button"
                         aria-label={`Edit ${p.title}`}
                         onClick={() => openEdit(p)}
-                        className="rounded-lg border border-[#2C3D34] bg-[#101B17] p-1.5 text-[#F3EBDD]/80 hover:text-[#D7A65A]"
+                        className="rounded-lg border border-[#E5E7EB] bg-[#F5F5F5] p-1.5 text-neutral-500 hover:text-[#16A34A]"
                       >
                         <Pencil className="h-3.5 w-3.5" />
                       </button>
@@ -282,7 +282,7 @@ export const PromotionsModule: React.FC<{
                         type="button"
                         aria-label={`Delete ${p.title}`}
                         onClick={() => setDeleteTarget(p)}
-                        className="rounded-lg border border-[#2C3D34] bg-[#101B17] p-1.5 text-rose-300/80 hover:text-rose-300"
+                        className="rounded-lg border border-[#E5E7EB] bg-[#F5F5F5] p-1.5 text-rose-600 hover:text-rose-600"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
@@ -303,7 +303,7 @@ export const PromotionsModule: React.FC<{
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
-              <label className="mb-1.5 block text-xs font-medium text-[#F3EBDD]/75">
+              <label className="mb-1.5 block text-xs font-medium text-neutral-500">
                 Offer Title *
               </label>
               <input
@@ -313,11 +313,11 @@ export const PromotionsModule: React.FC<{
                 value={form.title}
                 onChange={(e) => setForm({ ...form, title: e.target.value })}
                 placeholder="Weekend Chef's Special"
-                className="w-full rounded-xl border border-[#2C3D34] bg-[#101B17] px-3.5 py-2.5 text-sm text-[#F3EBDD]"
+                className="w-full rounded-xl border border-[#E5E7EB] bg-[#F5F5F5] px-3.5 py-2.5 text-sm text-[#111111]"
               />
             </div>
             <div>
-              <label className="mb-1.5 block text-xs font-medium text-[#F3EBDD]/75">
+              <label className="mb-1.5 block text-xs font-medium text-neutral-500">
                 Discount Text (optional)
               </label>
               <input
@@ -326,13 +326,13 @@ export const PromotionsModule: React.FC<{
                 value={form.discountText || ''}
                 onChange={(e) => setForm({ ...form, discountText: e.target.value })}
                 placeholder="e.g. 20% OFF or Free Dessert"
-                className="w-full rounded-xl border border-[#2C3D34] bg-[#101B17] px-3.5 py-2.5 text-sm text-[#F3EBDD]"
+                className="w-full rounded-xl border border-[#E5E7EB] bg-[#F5F5F5] px-3.5 py-2.5 text-sm text-[#111111]"
               />
             </div>
           </div>
 
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-[#F3EBDD]/75">
+            <label className="mb-1.5 block text-xs font-medium text-neutral-500">
               Short Promotional Description
             </label>
             <textarea
@@ -341,12 +341,12 @@ export const PromotionsModule: React.FC<{
               value={form.description}
               onChange={(e) => setForm({ ...form, description: e.target.value })}
               placeholder="Enjoy our seasonal tasting platter every Friday & Saturday evening."
-              className="w-full rounded-xl border border-[#2C3D34] bg-[#101B17] px-3.5 py-2.5 text-sm text-[#F3EBDD]"
+              className="w-full rounded-xl border border-[#E5E7EB] bg-[#F5F5F5] px-3.5 py-2.5 text-sm text-[#111111]"
             />
           </div>
 
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-[#F3EBDD]/75">
+            <label className="mb-1.5 block text-xs font-medium text-neutral-500">
               Coupon / Promo Code (optional)
             </label>
             <input
@@ -355,23 +355,23 @@ export const PromotionsModule: React.FC<{
               value={form.code}
               onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase() })}
               placeholder="Leave blank for homepage announcement only"
-              className="w-full rounded-xl border border-[#2C3D34] bg-[#101B17] px-3.5 py-2.5 font-mono text-sm text-[#D7A65A]"
+              className="w-full rounded-xl border border-[#E5E7EB] bg-[#F5F5F5] px-3.5 py-2.5 font-mono text-sm text-[#16A34A]"
             />
-            <p className="mt-1 text-[11px] text-[#F3EBDD]/55">
+            <p className="mt-1 text-[11px] text-neutral-500">
               Optional. Add a code only if guests should also apply a discount at checkout.
             </p>
           </div>
 
           {form.code.trim().length > 0 && (
-            <div className="grid grid-cols-3 gap-3 rounded-xl border border-[#2C3D34] bg-[#101B17]/60 p-3">
+            <div className="grid grid-cols-3 gap-3 rounded-xl border border-[#E5E7EB] bg-[#F5F5F5] p-3">
               <div>
-                <label className="mb-1.5 block text-xs font-medium text-[#F3EBDD]/75">Type</label>
+                <label className="mb-1.5 block text-xs font-medium text-neutral-500">Type</label>
                 <select
                   value={form.discountType}
                   onChange={(e) =>
                     setForm({ ...form, discountType: e.target.value as Promotion['discountType'] })
                   }
-                  className="w-full rounded-xl border border-[#2C3D34] bg-[#101B17] px-3 py-2 text-xs text-[#F3EBDD]"
+                  className="w-full rounded-xl border border-[#E5E7EB] bg-[#F5F5F5] px-3 py-2 text-xs text-[#111111]"
                 >
                   <option value="Percentage">Percentage</option>
                   <option value="Fixed Amount">Fixed Amount</option>
@@ -379,25 +379,25 @@ export const PromotionsModule: React.FC<{
                 </select>
               </div>
               <div>
-                <label className="mb-1.5 block text-xs font-medium text-[#F3EBDD]/75">Value</label>
+                <label className="mb-1.5 block text-xs font-medium text-neutral-500">Value</label>
                 <input
                   type="number"
                   step="0.01"
                   min={0}
                   value={form.discountValue}
                   onChange={(e) => setForm({ ...form, discountValue: Number(e.target.value) })}
-                  className="w-full rounded-xl border border-[#2C3D34] bg-[#101B17] px-3 py-2 text-sm text-[#F3EBDD]"
+                  className="w-full rounded-xl border border-[#E5E7EB] bg-[#F5F5F5] px-3 py-2 text-sm text-[#111111]"
                 />
               </div>
               <div>
-                <label className="mb-1.5 block text-xs font-medium text-[#F3EBDD]/75">Min Order</label>
+                <label className="mb-1.5 block text-xs font-medium text-neutral-500">Min Order</label>
                 <input
                   type="number"
                   step="0.01"
                   min={0}
                   value={form.minOrder}
                   onChange={(e) => setForm({ ...form, minOrder: Number(e.target.value) })}
-                  className="w-full rounded-xl border border-[#2C3D34] bg-[#101B17] px-3 py-2 text-sm text-[#F3EBDD]"
+                  className="w-full rounded-xl border border-[#E5E7EB] bg-[#F5F5F5] px-3 py-2 text-sm text-[#111111]"
                 />
               </div>
             </div>
@@ -405,44 +405,44 @@ export const PromotionsModule: React.FC<{
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="mb-1.5 block text-xs font-medium text-[#F3EBDD]/75">Start Date</label>
+              <label className="mb-1.5 block text-xs font-medium text-neutral-500">Start Date</label>
               <input
                 type="date"
                 value={form.validFrom}
                 onChange={(e) => setForm({ ...form, validFrom: e.target.value })}
-                className="w-full rounded-xl border border-[#2C3D34] bg-[#101B17] px-3.5 py-2.5 text-sm text-[#F3EBDD]"
+                className="w-full rounded-xl border border-[#E5E7EB] bg-[#F5F5F5] px-3.5 py-2.5 text-sm text-[#111111]"
               />
             </div>
             <div>
-              <label className="mb-1.5 block text-xs font-medium text-[#F3EBDD]/75">End Date</label>
+              <label className="mb-1.5 block text-xs font-medium text-neutral-500">End Date</label>
               <input
                 type="date"
                 value={form.validUntil}
                 onChange={(e) => setForm({ ...form, validUntil: e.target.value })}
-                className="w-full rounded-xl border border-[#2C3D34] bg-[#101B17] px-3.5 py-2.5 text-sm text-[#F3EBDD]"
+                className="w-full rounded-xl border border-[#E5E7EB] bg-[#F5F5F5] px-3.5 py-2.5 text-sm text-[#111111]"
               />
             </div>
           </div>
 
-          <label className="flex items-center gap-2 text-xs font-medium text-[#F3EBDD]">
+          <label className="flex items-center gap-2 text-xs font-medium text-[#111111]">
             <input
               type="checkbox"
               checked={form.active}
               onChange={(e) => setForm({ ...form, active: e.target.checked })}
-              className="h-4 w-4 accent-[#D7A65A]"
+              className="h-4 w-4 accent-[#16A34A]"
             />
             Active (publish on customer homepage during validity dates)
           </label>
 
           {/* Live Customer Homepage Banner Preview */}
-          <div className="rounded-xl border border-[#2C3D34] bg-[#101B17]/80 p-3">
-            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[#D7A65A]">
+          <div className="rounded-xl border border-[#E5E7EB] bg-[#F5F5F5] p-3">
+            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[#16A34A]">
               Customer Homepage Preview
             </p>
-            <div className="flex flex-wrap items-center justify-center gap-2 rounded-lg border border-[#D7A65A]/30 bg-[#101B17] px-3 py-2 text-center text-xs text-[#F3EBDD]">
-              <Sparkles className="h-3.5 w-3.5 shrink-0 text-[#D7A65A]" />
+            <div className="flex flex-wrap items-center justify-center gap-2 rounded-lg border border-[#16A34A]/40 bg-[#F5F5F5] px-3 py-2 text-center text-xs text-[#111111]">
+              <Sparkles className="h-3.5 w-3.5 shrink-0 text-[#16A34A]" />
               {modalPreviewBadge && (
-                <span className="rounded-full bg-[#D7A65A] px-2 py-0.5 text-[10px] font-bold text-[#101210]">
+                <span className="rounded-full bg-[#16A34A] px-2 py-0.5 text-[10px] font-bold text-[#101210]">
                   {modalPreviewBadge}
                 </span>
               )}
@@ -450,10 +450,10 @@ export const PromotionsModule: React.FC<{
                 {form.title.trim() || 'Your offer title'}
               </span>
               {form.description.trim() && (
-                <span className="text-[#F3EBDD]/75">— {form.description.trim()}</span>
+                <span className="text-neutral-500">— {form.description.trim()}</span>
               )}
               {form.code.trim() && (
-                <span className="rounded border border-[#D7A65A]/40 bg-[#D7A65A]/10 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-[#D7A65A]">
+                <span className="rounded border border-[#16A34A]/40 bg-[#16A34A]/10 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-[#16A34A]">
                   Code: {form.code.trim().toUpperCase()}
                 </span>
               )}
@@ -461,21 +461,21 @@ export const PromotionsModule: React.FC<{
           </div>
 
           {formError && (
-            <p className="text-xs font-medium text-rose-300">{formError}</p>
+            <p className="text-xs font-medium text-rose-600">{formError}</p>
           )}
 
           <div className="flex justify-end gap-2 pt-2">
             <button
               type="button"
               onClick={() => setModalOpen(false)}
-              className="rounded-xl border border-[#2C3D34] px-4 py-2 text-xs text-[#F3EBDD]"
+              className="rounded-xl border border-[#E5E7EB] px-4 py-2 text-xs text-[#111111]"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={saving}
-              className="rounded-xl bg-[#D7A65A] px-5 py-2 text-xs font-semibold text-[#101B17] hover:bg-[#e3b772] disabled:opacity-50"
+              className="rounded-xl bg-[#16A34A] px-5 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
             >
               {saving ? 'Saving...' : editing ? 'Save Offer' : 'Create Offer'}
             </button>

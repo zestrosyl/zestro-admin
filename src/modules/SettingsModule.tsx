@@ -106,7 +106,7 @@ export const SettingsModule: React.FC<{
     if (!canManage || saving) return;
     setSaving(true);
     try {
-      await onSaveSettings(draft);
+      await onSaveSettings({ ...draft, currency: 'BDT (৳)' });
     } finally {
       setSaving(false);
     }
@@ -115,14 +115,14 @@ export const SettingsModule: React.FC<{
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-[#F3EBDD]/70">
-          Configure restaurant profile, branding, taxes, delivery rules, and ordering channels.
+        <p className="text-sm text-neutral-600">
+          Configure restaurant profile, branding, taxes, delivery rules, and ordering channels (Bangladesh · BDT ৳).
         </p>
         {canManage && (
           <button
             type="submit"
             disabled={saving}
-            className="flex items-center gap-2 rounded-xl bg-[#D7A65A] px-5 py-2.5 text-sm font-semibold text-[#101B17] hover:bg-[#e3b772] disabled:opacity-50"
+            className="flex items-center gap-2 rounded-lg bg-[#16A34A] px-5 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
           >
             <Save className="h-4 w-4" /> {saving ? 'Saving...' : 'Save Settings'}
           </button>
@@ -130,49 +130,42 @@ export const SettingsModule: React.FC<{
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <div className="space-y-4 rounded-2xl border border-[#2C3D34] bg-[#1D2922] p-6">
-          <h2 className="font-serif text-lg font-semibold text-[#F3EBDD]">Restaurant Identity &amp; Pricing</h2>
+        <div className="space-y-4 rounded-xl border border-[#E5E7EB] bg-white p-6">
+          <h2 className="text-base font-semibold text-[#111111]">Restaurant Identity &amp; Pricing</h2>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
-              <label className="mb-1.5 block text-xs font-medium text-[#F3EBDD]/75">Name</label>
+              <label className="mb-1.5 block text-xs font-medium text-neutral-600">Name</label>
               <input
                 type="text"
                 disabled={!canManage}
                 value={draft.restaurantName}
                 onChange={(e) => setDraft({ ...draft, restaurantName: e.target.value })}
-                className="w-full rounded-xl border border-[#2C3D34] bg-[#101B17] px-3.5 py-2.5 text-sm text-[#F3EBDD]"
+                className="w-full rounded-lg border border-[#E5E7EB] bg-[#F5F5F5] px-3.5 py-2 text-sm text-[#111111]"
               />
             </div>
             <div>
-              <label className="mb-1.5 block text-xs font-medium text-[#F3EBDD]/75">Tagline</label>
+              <label className="mb-1.5 block text-xs font-medium text-neutral-600">Tagline</label>
               <input
                 type="text"
                 disabled={!canManage}
                 value={draft.tagline}
                 onChange={(e) => setDraft({ ...draft, tagline: e.target.value })}
-                className="w-full rounded-xl border border-[#2C3D34] bg-[#101B17] px-3.5 py-2.5 text-sm text-[#F3EBDD]"
+                className="w-full rounded-lg border border-[#E5E7EB] bg-[#F5F5F5] px-3.5 py-2 text-sm text-[#111111]"
               />
             </div>
           </div>
           <div className="grid grid-cols-3 gap-3">
             <div>
-              <label className="mb-1.5 block text-xs font-medium text-[#F3EBDD]/75">Currency</label>
-              <select
-                disabled={!canManage}
-                value={draft.currency}
-                onChange={(e) => setDraft({ ...draft, currency: e.target.value })}
-                className="w-full rounded-xl border border-[#2C3D34] bg-[#101B17] px-3 py-2.5 text-sm text-[#F3EBDD]"
-              >
-                <option value="BDT (৳)">BDT (৳)</option>
-                <option value="USD ($)">USD ($)</option>
-                <option value="SAR (﷼)">SAR (﷼)</option>
-                <option value="EUR (€)">EUR (€)</option>
-                <option value="GBP (£)">GBP (£)</option>
-                <option value="INR (₹)">INR (₹)</option>
-              </select>
+              <label className="mb-1.5 block text-xs font-medium text-neutral-600">Currency</label>
+              <input
+                type="text"
+                disabled
+                value="BDT (৳)"
+                className="w-full rounded-lg border border-[#E5E7EB] bg-[#F5F5F5] px-3 py-2 text-sm font-medium text-neutral-700"
+              />
             </div>
             <div>
-              <label className="mb-1.5 block text-xs font-medium text-[#F3EBDD]/75">Tax (%)</label>
+              <label className="mb-1.5 block text-xs font-medium text-neutral-600">Tax (%)</label>
               <input
                 type="number"
                 step="0.1"
@@ -180,11 +173,11 @@ export const SettingsModule: React.FC<{
                 disabled={!canManage}
                 value={draft.taxRatePercent}
                 onChange={(e) => setDraft({ ...draft, taxRatePercent: Number(e.target.value) })}
-                className="w-full rounded-xl border border-[#2C3D34] bg-[#101B17] px-3 py-2.5 text-sm text-[#F3EBDD]"
+                className="w-full rounded-lg border border-[#E5E7EB] bg-[#F5F5F5] px-3 py-2 text-sm text-[#111111]"
               />
             </div>
             <div>
-              <label className="mb-1.5 block text-xs font-medium text-[#F3EBDD]/75">Service (%)</label>
+              <label className="mb-1.5 block text-xs font-medium text-neutral-600">Service (%)</label>
               <input
                 type="number"
                 step="0.1"
@@ -192,13 +185,13 @@ export const SettingsModule: React.FC<{
                 disabled={!canManage}
                 value={draft.serviceChargePercent}
                 onChange={(e) => setDraft({ ...draft, serviceChargePercent: Number(e.target.value) })}
-                className="w-full rounded-xl border border-[#2C3D34] bg-[#101B17] px-3 py-2.5 text-sm text-[#F3EBDD]"
+                className="w-full rounded-lg border border-[#E5E7EB] bg-[#F5F5F5] px-3 py-2 text-sm text-[#111111]"
               />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="mb-1.5 block text-xs font-medium text-[#F3EBDD]/75">Delivery Fee</label>
+              <label className="mb-1.5 block text-xs font-medium text-neutral-600">Delivery Fee (৳)</label>
               <input
                 type="number"
                 step="0.01"
@@ -206,11 +199,11 @@ export const SettingsModule: React.FC<{
                 disabled={!canManage}
                 value={draft.deliveryFee}
                 onChange={(e) => setDraft({ ...draft, deliveryFee: Number(e.target.value) })}
-                className="w-full rounded-xl border border-[#2C3D34] bg-[#101B17] px-3 py-2.5 text-sm text-[#F3EBDD]"
+                className="w-full rounded-lg border border-[#E5E7EB] bg-[#F5F5F5] px-3 py-2 text-sm text-[#111111]"
               />
             </div>
             <div>
-              <label className="mb-1.5 block text-xs font-medium text-[#F3EBDD]/75">Minimum Order</label>
+              <label className="mb-1.5 block text-xs font-medium text-neutral-600">Minimum Order (৳)</label>
               <input
                 type="number"
                 step="0.01"
@@ -218,82 +211,103 @@ export const SettingsModule: React.FC<{
                 disabled={!canManage}
                 value={draft.minOrderAmount}
                 onChange={(e) => setDraft({ ...draft, minOrderAmount: Number(e.target.value) })}
-                className="w-full rounded-xl border border-[#2C3D34] bg-[#101B17] px-3 py-2.5 text-sm text-[#F3EBDD]"
+                className="w-full rounded-lg border border-[#E5E7EB] bg-[#F5F5F5] px-3 py-2 text-sm text-[#111111]"
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3 pt-1">
+            <div>
+              <label className="mb-1.5 block text-xs font-medium text-neutral-600">Country</label>
+              <input
+                type="text"
+                disabled
+                value="Bangladesh"
+                className="w-full rounded-lg border border-[#E5E7EB] bg-[#F5F5F5] px-3 py-2 text-xs text-neutral-600"
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-xs font-medium text-neutral-600">Timezone &amp; Date</label>
+              <input
+                type="text"
+                disabled
+                value="Asia/Dhaka · DD-MM-YYYY"
+                className="w-full rounded-lg border border-[#E5E7EB] bg-[#F5F5F5] px-3 py-2 text-xs text-neutral-600"
               />
             </div>
           </div>
         </div>
 
-        <div className="space-y-4 rounded-2xl border border-[#2C3D34] bg-[#1D2922] p-6">
-          <h2 className="font-serif text-lg font-semibold text-[#F3EBDD]">Contact &amp; Hours</h2>
+        <div className="space-y-4 rounded-xl border border-[#E5E7EB] bg-white p-6">
+          <h2 className="text-base font-semibold text-[#111111]">Contact &amp; Hours</h2>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
-              <label className="mb-1.5 block text-xs font-medium text-[#F3EBDD]/75">Phone</label>
+              <label className="mb-1.5 block text-xs font-medium text-neutral-600">Phone (+880)</label>
               <input
                 type="text"
                 disabled={!canManage}
                 value={draft.phone}
                 onChange={(e) => setDraft({ ...draft, phone: e.target.value })}
-                className="w-full rounded-xl border border-[#2C3D34] bg-[#101B17] px-3.5 py-2.5 text-sm text-[#F3EBDD]"
+                placeholder="+880 17..."
+                className="w-full rounded-lg border border-[#E5E7EB] bg-[#F5F5F5] px-3.5 py-2 text-sm text-[#111111]"
               />
             </div>
             <div>
-              <label className="mb-1.5 block text-xs font-medium text-[#F3EBDD]/75">WhatsApp Order Number</label>
+              <label className="mb-1.5 block text-xs font-medium text-neutral-600">WhatsApp Order Number</label>
               <input
                 type="text"
                 disabled={!canManage}
                 value={draft.whatsappNumber}
                 onChange={(e) => setDraft({ ...draft, whatsappNumber: e.target.value })}
                 placeholder="88017..."
-                className="w-full rounded-xl border border-[#2C3D34] bg-[#101B17] px-3.5 py-2.5 text-sm text-[#F3EBDD]"
+                className="w-full rounded-lg border border-[#E5E7EB] bg-[#F5F5F5] px-3.5 py-2 text-sm text-[#111111]"
               />
             </div>
           </div>
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-[#F3EBDD]/75">Email</label>
+            <label className="mb-1.5 block text-xs font-medium text-neutral-600">Email</label>
             <input
               type="email"
               disabled={!canManage}
               value={draft.email}
               onChange={(e) => setDraft({ ...draft, email: e.target.value })}
-              className="w-full rounded-xl border border-[#2C3D34] bg-[#101B17] px-3.5 py-2.5 text-sm text-[#F3EBDD]"
+              className="w-full rounded-lg border border-[#E5E7EB] bg-[#F5F5F5] px-3.5 py-2 text-sm text-[#111111]"
             />
           </div>
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-[#F3EBDD]/75">Street Address</label>
+            <label className="mb-1.5 block text-xs font-medium text-neutral-600">Street Address</label>
             <input
               type="text"
               disabled={!canManage}
               value={draft.address}
               onChange={(e) => setDraft({ ...draft, address: e.target.value })}
-              className="w-full rounded-xl border border-[#2C3D34] bg-[#101B17] px-3.5 py-2.5 text-sm text-[#F3EBDD]"
+              className="w-full rounded-lg border border-[#E5E7EB] bg-[#F5F5F5] px-3.5 py-2 text-sm text-[#111111]"
             />
           </div>
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-[#F3EBDD]/75">Opening Hours</label>
+            <label className="mb-1.5 block text-xs font-medium text-neutral-600">Opening Hours</label>
             <input
               type="text"
               disabled={!canManage}
               value={draft.openingHours}
               onChange={(e) => setDraft({ ...draft, openingHours: e.target.value })}
-              className="w-full rounded-xl border border-[#2C3D34] bg-[#101B17] px-3.5 py-2.5 text-sm text-[#F3EBDD]"
+              className="w-full rounded-lg border border-[#E5E7EB] bg-[#F5F5F5] px-3.5 py-2 text-sm text-[#111111]"
             />
           </div>
         </div>
 
-        <div className="space-y-4 rounded-2xl border border-[#2C3D34] bg-[#1D2922] p-6">
-          <h2 className="font-serif text-lg font-semibold text-[#F3EBDD]">Website &amp; Ordering</h2>
+        <div className="space-y-4 rounded-xl border border-[#E5E7EB] bg-white p-6">
+          <h2 className="text-base font-semibold text-[#111111]">Website &amp; Ordering</h2>
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-[#F3EBDD]/75">Customer Website URL</label>
+            <label className="mb-1.5 block text-xs font-medium text-neutral-600">Customer Website URL</label>
             <input
               type="url"
               disabled={!canManage}
               value={draft.websiteUrl}
               onChange={(e) => setDraft({ ...draft, websiteUrl: e.target.value })}
               placeholder="https://zestro-customer-website.pages.dev"
-              className="w-full rounded-xl border border-[#2C3D34] bg-[#101B17] px-3.5 py-2.5 text-sm text-[#F3EBDD]"
+              className="w-full rounded-lg border border-[#E5E7EB] bg-[#F5F5F5] px-3.5 py-2 text-sm text-[#111111]"
             />
-            <p className="mt-1 text-[11px] text-[#F3EBDD]/45">
+            <p className="mt-1 text-[11px] text-neutral-500">
               Used to generate scannable table QR menu links (`?table=T-01`).
             </p>
           </div>
@@ -305,7 +319,7 @@ export const SettingsModule: React.FC<{
           ].map((item) => (
             <label
               key={item.key}
-              className="flex cursor-pointer items-center justify-between rounded-xl border border-[#2C3D34] bg-[#101B17] px-4 py-3 text-sm text-[#F3EBDD]"
+              className="flex cursor-pointer items-center justify-between rounded-lg border border-[#E5E7EB] bg-[#F5F5F5] px-4 py-3 text-sm text-[#111111]"
             >
               <span>{item.label}</span>
               <input
@@ -313,26 +327,26 @@ export const SettingsModule: React.FC<{
                 disabled={!canManage}
                 checked={Boolean(draft[item.key as keyof RestaurantSettings])}
                 onChange={(e) => setDraft({ ...draft, [item.key]: e.target.checked })}
-                className="h-4 w-4 accent-[#D7A65A]"
+                className="h-4 w-4 accent-[#16A34A]"
               />
             </label>
           ))}
         </div>
 
-        <div className="space-y-4 rounded-2xl border border-[#2C3D34] bg-[#1D2922] p-6">
+        <div className="space-y-4 rounded-xl border border-[#E5E7EB] bg-white p-6">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <h2 className="flex items-center gap-2 font-serif text-lg font-semibold text-[#F3EBDD]">
-                <ImageIcon className="h-5 w-5 text-[#D7A65A]" /> Restaurant Branding
+              <h2 className="flex items-center gap-2 text-base font-semibold text-[#111111]">
+                <ImageIcon className="h-5 w-5 text-[#16A34A]" /> Restaurant Branding
               </h2>
-              <p className="mt-1 text-xs text-[#F3EBDD]/65">
+              <p className="mt-1 text-xs text-neutral-500">
                 Upload your restaurant logo to display in the customer website header.
               </p>
             </div>
           </div>
 
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-            <div className="flex h-24 w-48 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-[#2C3D34] bg-[#101B17] p-3">
+            <div className="flex h-24 w-48 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-[#E5E7EB] bg-[#F5F5F5] p-3">
               {draft.logoUrl ? (
                 <img
                   src={resolveAdminLogoPreview(draft.logoUrl)}
@@ -340,7 +354,7 @@ export const SettingsModule: React.FC<{
                   className="max-h-full max-w-full object-contain"
                 />
               ) : (
-                <div className="flex flex-col items-center gap-1 text-center text-[#F3EBDD]/45">
+                <div className="flex flex-col items-center gap-1 text-center text-neutral-400">
                   <ImageIcon className="h-5 w-5" />
                   <span className="text-[11px]">No custom logo</span>
                 </div>
@@ -361,7 +375,7 @@ export const SettingsModule: React.FC<{
                     type="button"
                     disabled={logoUploading}
                     onClick={() => logoInputRef.current?.click()}
-                    className="inline-flex items-center gap-2 rounded-xl border border-[#D7A65A]/45 bg-[#D7A65A]/15 px-3.5 py-2 text-xs font-semibold text-[#D7A65A] transition hover:bg-[#D7A65A]/25 disabled:opacity-50"
+                    className="inline-flex items-center gap-2 rounded-lg bg-[#111111] px-3.5 py-2 text-xs font-semibold text-white transition hover:bg-neutral-800 disabled:opacity-50"
                   >
                     <Upload className="h-3.5 w-3.5" />
                     {logoUploading
@@ -376,21 +390,21 @@ export const SettingsModule: React.FC<{
                     type="button"
                     disabled={logoUploading}
                     onClick={handleRemoveLogo}
-                    className="inline-flex items-center gap-1.5 rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs font-medium text-rose-300 transition hover:bg-rose-500/20 disabled:opacity-50"
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700 transition hover:bg-rose-100 disabled:opacity-50"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                     Remove
                   </button>
                 )}
               </div>
-              <p className="text-[11px] text-[#F3EBDD]/55">
+              <p className="text-[11px] text-neutral-500">
                 Supports PNG, JPG, JPEG, WebP, or SVG. Recommended transparent background (max 5 MB; 512 KB for SVG).
               </p>
               {logoError && (
-                <p className="text-xs font-medium text-rose-300">{logoError}</p>
+                <p className="text-xs font-medium text-rose-600">{logoError}</p>
               )}
               {logoMessage && (
-                <p className="text-xs font-medium text-emerald-300">{logoMessage}</p>
+                <p className="text-xs font-medium text-[#16A34A]">{logoMessage}</p>
               )}
             </div>
           </div>

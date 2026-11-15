@@ -37,6 +37,7 @@ import { WaiterCallsModule } from './modules/WaiterCallsModule';
 import { PromotionsModule } from './modules/PromotionsModule';
 import { StaffModule } from './modules/StaffModule';
 import { SettingsModule } from './modules/SettingsModule';
+import { ReportsModule } from './modules/ReportsModule';
 
 const EMPTY_HOMEPAGE_CONFIG: HomepageConfig = {
   heroImageKey: '',
@@ -356,7 +357,7 @@ export function App() {
   const incomingWaiterCallsCount = waiterCalls.filter((w) => w.status === 'Incoming').length;
 
   return (
-    <div className="flex min-h-screen bg-transparent text-[#F3EBDD]">
+    <div className="flex min-h-screen bg-[#F5F5F5] text-[#111111]">
       <Sidebar
         activeModule={activeModule}
         onSelectModule={setActiveModule}
@@ -388,31 +389,31 @@ export function App() {
 
         <main className="flex-1 p-4 sm:p-6 lg:p-8">
           {bootstrapping ? (
-            <div className="flex min-h-[55vh] flex-col items-center justify-center rounded-2xl border border-[#2C3D34] bg-[#1D2922]/80 p-10 text-center">
-              <Loader2 className="h-8 w-8 animate-spin text-[#D7A65A]" />
-              <h2 className="mt-4 font-serif text-xl font-semibold text-[#F3EBDD]">
+            <div className="flex min-h-[55vh] flex-col items-center justify-center rounded-xl border border-[#E5E7EB] bg-white p-10 text-center">
+              <Loader2 className="h-8 w-8 animate-spin text-[#16A34A]" />
+              <h2 className="mt-4 text-lg font-semibold text-[#111111]">
                 Connecting to ZESTRO Cloud
               </h2>
-              <p className="mt-1.5 max-w-md text-xs text-[#F3EBDD]/65">
-                Verifying your Cloudflare Access session and loading live restaurant records from D1 &amp; R2...
+              <p className="mt-1.5 max-w-md text-xs text-neutral-500">
+                Verifying your session and loading live restaurant records...
               </p>
             </div>
           ) : fatalError ? (
-            <div className="mx-auto max-w-xl rounded-2xl border border-rose-500/40 bg-[#1D2922] p-8 text-center">
-              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-rose-500/15 text-rose-300">
+            <div className="mx-auto max-w-xl rounded-xl border border-rose-200 bg-white p-8 text-center">
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-rose-50 text-rose-600">
                 <AlertTriangle className="h-6 w-6" />
               </div>
-              <h2 className="mt-4 font-serif text-xl font-semibold text-[#F3EBDD]">
+              <h2 className="mt-4 text-lg font-semibold text-[#111111]">
                 Live Backend Connection Failed
               </h2>
-              <p className="mt-2 text-sm text-[#F3EBDD]/75">{fatalError}</p>
-              <p className="mt-2 text-xs text-[#F3EBDD]/50">
+              <p className="mt-2 text-sm text-neutral-600">{fatalError}</p>
+              <p className="mt-2 text-xs text-neutral-500">
                 No offline or mock data is displayed so you never mistake local browser state for live restaurant records.
               </p>
               <button
                 type="button"
                 onClick={() => void loadAllLiveData(false)}
-                className="mt-6 inline-flex items-center gap-2 rounded-xl bg-[#D7A65A] px-5 py-2.5 text-sm font-semibold text-[#101B17] hover:bg-[#e3b772]"
+                className="mt-6 inline-flex items-center gap-2 rounded-lg bg-[#16A34A] px-5 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
               >
                 <RefreshCw className="h-4 w-4" /> Retry Live Connection
               </button>
@@ -698,15 +699,14 @@ export function App() {
                   restaurantName={settings.restaurantName}
                   globalSearch={globalSearch}
                   canOperate={canOperate}
-                  onUpdateStatus={(id, status: OrderStatus) => {
-                    void adminApi(`/api/orders/${id}`, 'PATCH', { status })
-                      .then(() => {
-                        setOrders((prev) => prev.map((o) => (o.id === id ? { ...o, status } : o)));
-                        notify(`Order updated to ${status}`);
-                      })
-                      .catch((error) =>
-                        notify(error instanceof Error ? error.message : 'Order update failed', 'warning')
-                      );
+                  onUpdateStatus={async (id, status: OrderStatus) => {
+                    try {
+                      await adminApi(`/api/orders/${id}`, 'PATCH', { status });
+                      setOrders((prev) => prev.map((o) => (o.id === id ? { ...o, status } : o)));
+                      notify(`Order updated to ${status}`);
+                    } catch (error) {
+                      notify(error instanceof Error ? error.message : 'Order update failed', 'warning');
+                    }
                   }}
                   onCreateOrder={async (payload) => {
                     try {
@@ -910,6 +910,13 @@ export function App() {
                         )
                       );
                   }}
+                />
+              )}
+
+              {activeModule === 'reports' && (
+                <ReportsModule
+                  orders={orders}
+                  currency={settings.currency}
                 />
               )}
 

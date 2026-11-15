@@ -1,5 +1,5 @@
 import type { Order } from '../types';
-import { formatCurrency } from '../services/api';
+import { formatCurrency, formatDhakaDateTime } from '../services/api';
 
 const HTML_ENTITIES: Record<string, string> = {
   '&': '&amp;',
@@ -13,15 +13,7 @@ const escapeHtml = (value: string) =>
   String(value ?? '').replace(/[&<>"']/g, (character) => HTML_ENTITIES[character] ?? character);
 
 function formatReceiptDate(value: string): string {
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return value;
-  return d.toLocaleString(undefined, {
-    year: 'numeric',
-    month: 'short',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  return formatDhakaDateTime(value);
 }
 
 export function printOrderReceipt(

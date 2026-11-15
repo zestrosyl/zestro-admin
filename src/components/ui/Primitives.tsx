@@ -11,13 +11,15 @@ export const StatCard: React.FC<{
   icon: React.ReactNode;
   subtitle?: string;
 }> = ({ title, value, delta, positive = true, icon, subtitle }) => (
-  <div className="rounded-2xl border border-[#2C3D34] bg-[#1D2922] p-5 transition-all duration-200 hover:border-[#D7A65A]/45">
+  <div className="rounded-xl border border-[#E5E7EB] bg-white p-5">
     <div className="flex items-start justify-between gap-3">
       <div>
-        <p className="text-xs font-medium uppercase tracking-wider text-[#F3EBDD]/60">{title}</p>
-        <p className="mt-2 font-serif text-2xl font-semibold text-[#F3EBDD] sm:text-3xl">{value}</p>
+        <p className="text-xs font-medium uppercase tracking-wider text-neutral-500">{title}</p>
+        <p className="mt-2 text-2xl font-semibold tracking-tight text-[#111111] sm:text-3xl">
+          {value}
+        </p>
       </div>
-      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[#D7A65A]/25 bg-[#101B17] text-[#D7A65A]">
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-[#E5E7EB] bg-[#F5F5F5] text-[#111111]">
         {icon}
       </div>
     </div>
@@ -27,14 +29,14 @@ export const StatCard: React.FC<{
           <span
             className={`rounded-full px-2 py-0.5 font-medium ${
               positive
-                ? 'bg-emerald-500/15 text-emerald-300'
-                : 'bg-rose-500/15 text-rose-300'
+                ? 'bg-emerald-50 text-[#16A34A]'
+                : 'bg-red-50 text-red-700'
             }`}
           >
             {delta}
           </span>
         )}
-        {subtitle && <span className="text-[#F3EBDD]/55">{subtitle}</span>}
+        {subtitle && <span className="text-neutral-500">{subtitle}</span>}
       </div>
     )}
   </div>
@@ -45,14 +47,16 @@ export const Badge: React.FC<{
   variant?: 'gold' | 'emerald' | 'amber' | 'rose' | 'neutral';
 }> = ({ children, variant = 'neutral' }) => {
   const styles: Record<string, string> = {
-    gold: 'border-[#D7A65A]/40 bg-[#D7A65A]/15 text-[#D7A65A]',
-    emerald: 'border-emerald-500/35 bg-emerald-500/15 text-emerald-300',
-    amber: 'border-amber-500/35 bg-amber-500/15 text-amber-300',
-    rose: 'border-rose-500/35 bg-rose-500/15 text-rose-300',
-    neutral: 'border-[#2C3D34] bg-[#101B17] text-[#F3EBDD]/75',
+    gold: 'border-neutral-300 bg-[#F5F5F5] text-[#111111]',
+    emerald: 'border-emerald-200 bg-emerald-50 text-[#16A34A]',
+    amber: 'border-amber-200 bg-amber-50 text-amber-800',
+    rose: 'border-red-200 bg-red-50 text-red-700',
+    neutral: 'border-[#E5E7EB] bg-[#F5F5F5] text-neutral-700',
   };
   return (
-    <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium ${styles[variant]}`}>
+    <span
+      className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium ${styles[variant]}`}
+    >
       {children}
     </span>
   );
@@ -78,25 +82,27 @@ export const Modal: React.FC<{
   if (!open) return null;
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm modal-backdrop"
-      onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
       role="presentation"
     >
       <div
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className={`modal-panel w-full ${maxWidth} max-h-[90vh] overflow-y-auto rounded-2xl border border-[#2C3D34] bg-[#1D2922] shadow-2xl`}
+        className={`w-full ${maxWidth} max-h-[90vh] overflow-y-auto rounded-xl border border-[#E5E7EB] bg-white shadow-lg`}
       >
-        <div className="sticky top-0 z-10 flex items-start justify-between border-b border-[#2C3D34] bg-[#1D2922] px-6 py-4">
+        <div className="sticky top-0 z-10 flex items-start justify-between border-b border-[#E5E7EB] bg-white px-6 py-4">
           <div>
-            <h3 className="font-serif text-lg font-semibold text-[#F3EBDD]">{title}</h3>
-            {subtitle && <p className="mt-0.5 text-xs text-[#F3EBDD]/60">{subtitle}</p>}
+            <h3 className="text-lg font-semibold text-[#111111]">{title}</h3>
+            {subtitle && <p className="mt-0.5 text-xs text-neutral-500">{subtitle}</p>}
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg p-1.5 text-[#F3EBDD]/60 transition hover:bg-[#101B17] hover:text-[#F3EBDD]"
+            className="rounded-lg p-1.5 text-neutral-500 hover:bg-[#F5F5F5] hover:text-[#111111]"
             aria-label="Close modal"
           >
             <X className="h-5 w-5" />
@@ -118,23 +124,23 @@ export const ConfirmDialog: React.FC<{
 }> = ({ open, title, message, confirmLabel = 'Delete', onConfirm, onCancel }) => (
   <Modal open={open} onClose={onCancel} title={title} maxWidth="max-w-md">
     <div className="flex items-start gap-3">
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-500/15 text-rose-300">
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-red-50 text-red-600">
         <AlertTriangle className="h-5 w-5" />
       </div>
-      <p className="text-sm leading-relaxed text-[#F3EBDD]/80">{message}</p>
+      <p className="text-sm leading-relaxed text-neutral-700">{message}</p>
     </div>
     <div className="mt-6 flex justify-end gap-3">
       <button
         type="button"
         onClick={onCancel}
-        className="rounded-xl border border-[#2C3D34] bg-[#101B17] px-4 py-2 text-sm font-medium text-[#F3EBDD]/80 transition hover:border-[#F3EBDD]/30"
+        className="rounded-lg border border-[#E5E7EB] bg-white px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-[#F5F5F5]"
       >
         Cancel
       </button>
       <button
         type="button"
         onClick={onConfirm}
-        className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-500"
+        className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700"
       >
         {confirmLabel}
       </button>
@@ -150,20 +156,20 @@ export const ToastContainer: React.FC<{
     {toasts.map((t) => (
       <div
         key={t.id}
-        className="toast-enter flex items-center gap-3 rounded-xl border border-[#D7A65A]/40 bg-[#1D2922] px-4 py-3 text-sm text-[#F3EBDD] shadow-xl"
+        className="flex items-center gap-3 rounded-lg border border-[#E5E7EB] bg-white px-4 py-3 text-sm text-[#111111] shadow-md"
       >
         {t.tone === 'success' ? (
-          <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" />
+          <CheckCircle2 className="h-4 w-4 shrink-0 text-[#16A34A]" />
         ) : t.tone === 'warning' ? (
-          <AlertTriangle className="h-4 w-4 shrink-0 text-amber-400" />
+          <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
         ) : (
-          <Info className="h-4 w-4 shrink-0 text-[#D7A65A]" />
+          <Info className="h-4 w-4 shrink-0 text-[#111111]" />
         )}
         <span>{t.message}</span>
         <button
           type="button"
           onClick={() => onDismiss(t.id)}
-          className="ml-2 text-[#F3EBDD]/50 hover:text-[#F3EBDD]"
+          className="ml-2 text-neutral-400 hover:text-[#111111]"
           aria-label="Dismiss notification"
         >
           <X className="h-3.5 w-3.5" />
@@ -175,12 +181,12 @@ export const ToastContainer: React.FC<{
 
 /** Standards-compliant QR code. The encoded URL must resolve to the restaurant's public menu. */
 export const QrCodeSvg: React.FC<{ value: string; size?: number }> = ({ value, size = 148 }) => (
-  <div className="inline-flex rounded-2xl bg-[#F3EBDD] p-3 shadow-inner">
+  <div className="inline-flex rounded-xl border border-[#E5E7EB] bg-white p-3">
     <QRCodeSVG
       value={value}
       size={size}
-      bgColor="#F3EBDD"
-      fgColor="#101B17"
+      bgColor="#FFFFFF"
+      fgColor="#111111"
       level="H"
       includeMargin
       title={`QR code for ${value}`}

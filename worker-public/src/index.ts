@@ -473,12 +473,10 @@ async function handle(req: Request, env: Env): Promise<Response> {
           minOrderAmount: Number(rawSettings.minOrderAmount) || 0,
           taxPercent: Number(rawSettings.taxRatePercent ?? rawSettings.taxPercent) || 0,
           serviceChargePercent: Number(rawSettings.serviceChargePercent) || 0,
-          currency: toCurrencySymbol(
-            String(rawSettings.currency || restaurant.currency || 'BDT')
-          ),
-          defaultLanguage: (['en', 'bn', 'ar'].includes(String(rawSettings.defaultLanguage))
+          currency: '৳',
+          defaultLanguage: (['en', 'bn'].includes(String(rawSettings.defaultLanguage))
             ? rawSettings.defaultLanguage
-            : 'en') as 'en' | 'bn' | 'ar',
+            : 'en') as 'en' | 'bn',
           acceptingOrders: onlineOrderingEnabled,
           qrTableOrderingEnabled,
           reviews: Array.isArray(rawSettings.reviews) ? rawSettings.reviews : [],

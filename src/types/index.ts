@@ -9,6 +9,7 @@ export type ModuleId =
   | 'tables'
   | 'waiter-calls'
   | 'promotions'
+  | 'reports'
   | 'staff'
   | 'settings';
 
