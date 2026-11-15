@@ -30,7 +30,7 @@ export function createAuth(env: AuthEnv, ctx?: ExecutionContext) {
 
   return betterAuth({
     appName: 'ZESTRO Admin',
-    baseURL: baseURL.toString().replace(/\\/$/, ''),
+    baseURL: baseURL.toString().replace(/\/$/, ''),
     secret: env.BETTER_AUTH_SECRET,
     database: env.DB,
     emailAndPassword: {
@@ -63,7 +63,7 @@ export function createAuth(env: AuthEnv, ctx?: ExecutionContext) {
             from: env.RESEND_FROM_EMAIL,
             to: [authUser.email],
             subject: 'Reset your ZESTRO Admin password',
-            text: `A password reset was requested for your ZESTRO Admin account. Complete it here: ${resetUrl.toString()}\\n\\nIf you did not request this, ignore this email.`,
+            text: `A password reset was requested for your ZESTRO Admin account. Complete it here: ${resetUrl.toString()}\n\nIf you did not request this, ignore this email.`,
           }),
         }).then((response) => {
           if (!response.ok) {
@@ -77,3 +77,22 @@ export function createAuth(env: AuthEnv, ctx?: ExecutionContext) {
         await send;
       },
 
+    },
+  });
+}
+
+export async function handleAuthRequest(
+  request: Request,
+  env: AuthEnv,
+  ctx?: ExecutionContext
+): Promise<Response> {
+  return createAuth(env, ctx).handler(request);
+}
+
+export async function getAuthSession(
+  request: Request,
+  env: AuthEnv
+) {
+  const auth = createAuth(env);
+  return auth.api.getSession({ headers: request.headers });
+}
