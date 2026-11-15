@@ -1,11 +1,11 @@
 name = "zestro-customer-api"
 main = "src/index.ts"
-compatibility_date = "2026-11-14"
+compatibility_date = "2024-11-14"
 workers_dev = true
 
 [vars]
 RESTAURANT_ID = "45291381-ba84-4e2f-a60c-1c39a119c2d7"
-ALLOWED_ORIGINS = "https://zestro-customer-website.pages.dev"
+ALLOWED_ORIGINS = "https://zestro-customer-website.pages.dev,https://live-backend-nov-14-2026.zestro-customer-website.pages.dev"
 WHATSAPP_NUMBER = "+8801601987672"
 
 [[d1_databases]]

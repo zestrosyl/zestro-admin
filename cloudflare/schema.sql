@@ -1,6 +1,6 @@
--- ZESTRO multi-tenant D1 starting schema.
--- Execute only after reviewing and adapting this schema for the deployed API.
--- Authentication and tenant authorization must be enforced in the Worker on every request.
+-- ZESTRO Multi-Tenant Restaurant SaaS — Complete Canonical Cloudflare D1 Schema
+-- For fresh provisioning or reference. Existing databases MUST apply incremental
+-- migrations from worker/migrations/ rather than re-running full DDL blindly.
 
 PRAGMA foreign_keys = ON;
 
@@ -23,6 +23,10 @@ CREATE TABLE IF NOT EXISTS memberships (
   display_name TEXT NOT NULL,
   role TEXT NOT NULL CHECK (role IN ('owner', 'admin', 'manager', 'staff', 'viewer')),
   status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('invited', 'active', 'disabled')),
+  phone TEXT NOT NULL DEFAULT '',
+  shift TEXT NOT NULL DEFAULT '',
+  job_title TEXT NOT NULL DEFAULT '',
+  duty_status TEXT NOT NULL DEFAULT 'Active' CHECK (duty_status IN ('Active', 'On Shift', 'Off Duty')),
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE (restaurant_id, auth_subject),
   UNIQUE (restaurant_id, email)
@@ -34,8 +38,9 @@ CREATE TABLE IF NOT EXISTS menu_categories (
   name TEXT NOT NULL,
   slug TEXT NOT NULL,
   description TEXT NOT NULL DEFAULT '',
+  category_type TEXT NOT NULL DEFAULT 'food' CHECK (category_type IN ('food', 'beverage')),
   sort_order INTEGER NOT NULL DEFAULT 0,
-  active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+  active INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE (restaurant_id, slug)
@@ -49,10 +54,13 @@ CREATE TABLE IF NOT EXISTS menu_items (
   description TEXT NOT NULL DEFAULT '',
   price_minor INTEGER NOT NULL CHECK (price_minor >= 0),
   image_key TEXT,
-  available INTEGER NOT NULL DEFAULT 1 CHECK (available IN (0, 1)),
-  featured INTEGER NOT NULL DEFAULT 0 CHECK (featured IN (0, 1)),
-  prep_minutes INTEGER NOT NULL DEFAULT 0,
+  image_url TEXT NOT NULL DEFAULT '',
+  available INTEGER NOT NULL DEFAULT 1,
+  featured INTEGER NOT NULL DEFAULT 0,
+  prep_minutes INTEGER NOT NULL DEFAULT 15,
   dietary_tags_json TEXT NOT NULL DEFAULT '[]',
+  options_json TEXT NOT NULL DEFAULT '{}',
+  sort_order INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -75,13 +83,19 @@ CREATE TABLE IF NOT EXISTS orders (
   order_number TEXT NOT NULL,
   table_id TEXT REFERENCES restaurant_tables(id) ON DELETE SET NULL,
   customer_name TEXT NOT NULL DEFAULT 'Guest',
-  order_type TEXT NOT NULL CHECK (order_type IN ('dine_in', 'takeaway', 'delivery')),
+  customer_phone TEXT NOT NULL DEFAULT '',
+  delivery_address TEXT NOT NULL DEFAULT '',
+  order_type TEXT NOT NULL DEFAULT 'dine_in' CHECK (order_type IN ('dine_in', 'takeaway', 'delivery')),
   status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'accepted', 'preparing', 'ready', 'served', 'cancelled')),
   subtotal_minor INTEGER NOT NULL DEFAULT 0,
+  discount_minor INTEGER NOT NULL DEFAULT 0,
   tax_minor INTEGER NOT NULL DEFAULT 0,
   service_charge_minor INTEGER NOT NULL DEFAULT 0,
+  delivery_fee_minor INTEGER NOT NULL DEFAULT 0,
   total_minor INTEGER NOT NULL DEFAULT 0,
+  promo_code TEXT,
   customer_note TEXT NOT NULL DEFAULT '',
+  staff_note TEXT NOT NULL DEFAULT '',
   idempotency_key TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -97,7 +111,8 @@ CREATE TABLE IF NOT EXISTS order_items (
   item_name_snapshot TEXT NOT NULL,
   quantity INTEGER NOT NULL CHECK (quantity > 0),
   unit_price_minor INTEGER NOT NULL CHECK (unit_price_minor >= 0),
-  line_total_minor INTEGER NOT NULL CHECK (line_total_minor >= 0)
+  line_total_minor INTEGER NOT NULL CHECK (line_total_minor >= 0),
+  options_snapshot_json TEXT NOT NULL DEFAULT '{}'
 );
 
 CREATE TABLE IF NOT EXISTS waiter_calls (
@@ -116,13 +131,15 @@ CREATE TABLE IF NOT EXISTS promotions (
   id TEXT PRIMARY KEY,
   restaurant_id TEXT NOT NULL REFERENCES restaurants(id) ON DELETE CASCADE,
   title TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
   code TEXT NOT NULL,
   discount_type TEXT NOT NULL CHECK (discount_type IN ('percentage', 'fixed_amount', 'complimentary_item')),
   discount_value_minor INTEGER NOT NULL DEFAULT 0,
   min_order_minor INTEGER NOT NULL DEFAULT 0,
-  valid_from TEXT NOT NULL,
-  valid_until TEXT NOT NULL,
+  valid_from TEXT NOT NULL DEFAULT '',
+  valid_until TEXT NOT NULL DEFAULT '',
   active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+  usage_count INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE (restaurant_id, code)
 );
@@ -134,9 +151,25 @@ CREATE TABLE IF NOT EXISTS media_assets (
   title TEXT NOT NULL,
   folder TEXT NOT NULL DEFAULT 'general',
   mime_type TEXT NOT NULL,
-  size_bytes INTEGER NOT NULL DEFAULT 0,
+  dimensions TEXT NOT NULL DEFAULT '',
+  size_bytes INTEGER NOT NULL,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT,
   UNIQUE (restaurant_id, object_key)
+);
+
+CREATE TABLE IF NOT EXISTS gallery_photos (
+  id TEXT PRIMARY KEY,
+  restaurant_id TEXT NOT NULL REFERENCES restaurants(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  caption TEXT NOT NULL DEFAULT '',
+  category TEXT NOT NULL DEFAULT 'Dining Room' CHECK (category IN ('Dining Room', 'Culinary', 'Private Events', 'Bar & Lounge')),
+  image_key TEXT,
+  image_url TEXT NOT NULL DEFAULT '',
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  featured INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS restaurant_settings (
@@ -156,10 +189,15 @@ CREATE TABLE IF NOT EXISTS audit_logs (
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX IF NOT EXISTS idx_memberships_auth_subject ON memberships(auth_subject);
-CREATE INDEX IF NOT EXISTS idx_menu_items_restaurant_category ON menu_items(restaurant_id, category_id);
-CREATE INDEX IF NOT EXISTS idx_orders_restaurant_created ON orders(restaurant_id, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_orders_restaurant_status ON orders(restaurant_id, status);
+CREATE INDEX IF NOT EXISTS idx_memberships_subject ON memberships(auth_subject);
+CREATE INDEX IF NOT EXISTS idx_memberships_email ON memberships(restaurant_id, email);
+CREATE INDEX IF NOT EXISTS idx_menu_categories_restaurant_sort ON menu_categories(restaurant_id, sort_order);
+CREATE INDEX IF NOT EXISTS idx_menu_items_restaurant ON menu_items(restaurant_id, category_id, available);
+CREATE INDEX IF NOT EXISTS idx_orders_restaurant_status ON orders(restaurant_id, status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id);
+CREATE INDEX IF NOT EXISTS idx_order_items_menu_item ON order_items(restaurant_id, menu_item_id);
 CREATE INDEX IF NOT EXISTS idx_waiter_calls_restaurant_status ON waiter_calls(restaurant_id, status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_promotions_restaurant_active ON promotions(restaurant_id, active);
+CREATE INDEX IF NOT EXISTS idx_media_assets_restaurant_created ON media_assets(restaurant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_gallery_photos_restaurant_sort ON gallery_photos(restaurant_id, sort_order);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_restaurant_created ON audit_logs(restaurant_id, created_at DESC);

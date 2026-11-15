@@ -1,15 +1,17 @@
 export interface OptimizedImage {
+  blob: Blob;
+  mimeType: string;
   dataUrl: string;
   width: number;
   height: number;
   sizeKb: number;
 }
 
-/** Resize and compress uploads before storing them in the local demo workspace. */
-export function optimizeImageUpload(file: File, maxEdge = 1440): Promise<OptimizedImage> {
+/** Resize and compress uploads client-side before sending binary bytes to Cloudflare R2. */
+export function optimizeImageUpload(file: File, maxEdge = 1600): Promise<OptimizedImage> {
   return new Promise((resolve, reject) => {
     if (!file.type.startsWith('image/')) {
-      reject(new Error('Please select an image file.'));
+      reject(new Error('Please select a valid image file (JPEG, PNG, WebP, or AVIF).'));
       return;
     }
     if (file.size > 15 * 1024 * 1024) {
@@ -30,13 +32,33 @@ export function optimizeImageUpload(file: File, maxEdge = 1440): Promise<Optimiz
         const context = canvas.getContext('2d');
         if (!context) throw new Error('Your browser could not process this image.');
         context.drawImage(image, 0, 0, width, height);
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
-        resolve({
-          dataUrl,
-          width,
-          height,
-          sizeKb: Math.max(1, Math.round((dataUrl.length * 3) / 4 / 1024)),
-        });
+
+        const outputType =
+          file.type === 'image/png' || file.type === 'image/webp' ? file.type : 'image/jpeg';
+        const dataUrl = canvas.toDataURL(outputType, 0.85);
+
+        canvas.toBlob(
+          (blob) => {
+            if (!blob) {
+              reject(new Error('Failed to encode image for upload.'));
+              return;
+            }
+            if (blob.size > 5 * 1024 * 1024) {
+              reject(new Error('Compressed image still exceeds 5 MB. Please choose a smaller photo.'));
+              return;
+            }
+            resolve({
+              blob,
+              mimeType: blob.type || outputType,
+              dataUrl,
+              width,
+              height,
+              sizeKb: Math.max(1, Math.round(blob.size / 1024)),
+            });
+          },
+          outputType,
+          0.85
+        );
       } catch (error) {
         reject(error instanceof Error ? error : new Error('Image processing failed.'));
       } finally {
