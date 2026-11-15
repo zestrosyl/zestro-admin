@@ -29,6 +29,8 @@ export interface InvitationRecord {
   restaurant_id: string;
   membership_id: string;
   token_hash: string;
+  reserved_at?: string | null;
+  auth_user_id?: string | null;
   expires_at: string;
   consumed_at: string | null;
   revoked_at: string | null;
@@ -74,115 +76,60 @@ export async function issueInvitation(
   return { token, invitationId, expiresAt };
 }
 
-export async function consumeInvitation(
-  env: InvitationEnv,
-  token: string
-): Promise<InvitationRecord | null> {
+export async function getInvitation(env: InvitationEnv, token: string) {
   if (token.length < 40 || token.length > 128) return null;
   const tokenHash = await sha256(token);
-  const invitation = await env.DB.prepare(
-    `SELECT * FROM auth_invitation_tokens
-     WHERE token_hash = ? AND consumed_at IS NULL AND revoked_at IS NULL
+  return env.DB.prepare(
+    `SELECT t.*, m.email, m.display_name
+     FROM auth_invitation_tokens t JOIN memberships m ON m.id = t.membership_id
+     WHERE t.token_hash = ? AND t.consumed_at IS NULL AND t.revoked_at IS NULL
+       AND t.expires_at > CURRENT_TIMESTAMP AND m.status = 'invited' LIMIT 1`
+  ).bind(tokenHash).first<InvitationRecord & { email: string; display_name: string }>();
+}
+
+export async function reserveInvitation(env: InvitationEnv, invitation: InvitationRecord): Promise<boolean> {
+  const result = await env.DB.prepare(
+    `UPDATE auth_invitation_tokens SET reserved_at = CURRENT_TIMESTAMP
+     WHERE id = ? AND membership_id = ? AND consumed_at IS NULL AND revoked_at IS NULL
        AND expires_at > CURRENT_TIMESTAMP
-     LIMIT 1`
-  ).bind(tokenHash).first<InvitationRecord>();
-  if (!invitation) return null;
-
-  // Reserve the membership first only while the invitation is still valid.
-  // The second statement consumes the token only if that reservation is present.
-  // Both operations are one D1 batch; retries can complete a reserved-but-not-
-  // consumed invitation without activating the membership.
-  const result = await env.DB.batch([
-    env.DB.prepare(
-      `UPDATE memberships
-       SET auth_subject = 'pending-auth:' || id
-       WHERE id = ? AND restaurant_id = ? AND status = 'invited'
-         AND (auth_subject IS NULL OR auth_subject = '' OR auth_subject = 'pending-auth:' || id)
-         AND EXISTS (
-           SELECT 1 FROM auth_invitation_tokens t
-           WHERE t.id = ? AND t.membership_id = memberships.id
-             AND t.token_hash = ? AND t.consumed_at IS NULL
-             AND t.revoked_at IS NULL AND t.expires_at > CURRENT_TIMESTAMP
-         )`
-    ).bind(invitation.membership_id, invitation.restaurant_id, invitation.id, tokenHash),
-    env.DB.prepare(
-      `UPDATE auth_invitation_tokens
-       SET consumed_at = CURRENT_TIMESTAMP
-       WHERE id = ? AND membership_id = ? AND token_hash = ?
-         AND consumed_at IS NULL AND revoked_at IS NULL
-         AND expires_at > CURRENT_TIMESTAMP
-         AND EXISTS (
-           SELECT 1 FROM memberships m
-           WHERE m.id = ? AND m.restaurant_id = ?
-             AND m.status = 'invited'
-             AND m.auth_subject = 'pending-auth:' || m.id
-         )`
-    ).bind(
-      invitation.id,
-      invitation.membership_id,
-      tokenHash,
-      invitation.membership_id,
-      invitation.restaurant_id
-    ),
-  ]);
-
-  if (Number(result[1].meta?.changes ?? 0) !== 1) return null;
-  const consumed = await env.DB.prepare(
-    `SELECT * FROM auth_invitation_tokens
-     WHERE id = ? AND consumed_at IS NOT NULL AND revoked_at IS NULL LIMIT 1`
-  ).bind(invitation.id).first<InvitationRecord>();
-  return consumed || null;
+       AND (reserved_at IS NULL OR reserved_at < datetime('now', '-10 minutes'))`
+  ).bind(invitation.id, invitation.membership_id).run();
+  return Number(result.meta?.changes ?? 0) === 1;
 }
 
 export async function attachAuthUserToInvitation(
-  env: InvitationEnv,
-  invitation: InvitationRecord,
-  authUserId: string
+  env: InvitationEnv, invitation: InvitationRecord, authUserId: string
 ): Promise<boolean> {
   if (!authUserId) return false;
   const result = await env.DB.prepare(
-    `UPDATE memberships
-     SET auth_subject = ?
-     WHERE id = ? AND restaurant_id = ? AND status = 'invited'
-       AND (auth_subject = 'pending-auth:' || id OR auth_subject = ?)
-       AND EXISTS (
-         SELECT 1 FROM auth_invitation_tokens t
-         WHERE t.id = ? AND t.membership_id = memberships.id
-           AND t.consumed_at IS NOT NULL AND t.revoked_at IS NULL
-       )`
-  ).bind(
-    authUserId,
-    invitation.membership_id,
-    invitation.restaurant_id,
-    authUserId,
-    invitation.id
-  ).run();
+    `UPDATE auth_invitation_tokens SET auth_user_id = ?
+     WHERE id = ? AND membership_id = ? AND consumed_at IS NULL AND revoked_at IS NULL
+       AND expires_at > CURRENT_TIMESTAMP AND (auth_user_id IS NULL OR auth_user_id = ?)`
+  ).bind(authUserId, invitation.id, invitation.membership_id, authUserId).run();
   return Number(result.meta?.changes ?? 0) === 1;
 }
 
 export async function activateInvitationMembership(
-  env: InvitationEnv,
-  invitation: InvitationRecord,
-  authUserId: string
+  env: InvitationEnv, invitation: InvitationRecord, authUserId: string
 ): Promise<boolean> {
-  if (!authUserId || !invitation.id) return false;
-  const result = await env.DB.prepare(
-    `UPDATE memberships
-     SET status = 'active'
-     WHERE id = ? AND restaurant_id = ? AND status IN ('invited', 'active')
-       AND auth_subject = ?
-       AND EXISTS (
-         SELECT 1 FROM auth_invitation_tokens t
-         WHERE t.id = ? AND t.membership_id = memberships.id
-           AND t.consumed_at IS NOT NULL AND t.revoked_at IS NULL
-       )`
-  ).bind(
-    invitation.membership_id,
-    invitation.restaurant_id,
-    authUserId,
-    invitation.id
-  ).run();
-  return Number(result.meta?.changes ?? 0) === 1;
+  const result = await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE memberships SET auth_subject = ?, status = 'active'
+       WHERE id = ? AND restaurant_id = ? AND status = 'invited'
+         AND EXISTS (SELECT 1 FROM auth_invitation_tokens t WHERE t.id = ?
+           AND t.auth_user_id = ? AND t.consumed_at IS NULL AND t.revoked_at IS NULL
+           AND t.expires_at > CURRENT_TIMESTAMP)`
+    ).bind(authUserId, invitation.membership_id, invitation.restaurant_id, invitation.id, authUserId),
+    env.DB.prepare(
+      `UPDATE auth_invitation_tokens SET consumed_at = CURRENT_TIMESTAMP
+       WHERE id = ? AND membership_id = ? AND auth_user_id = ? AND consumed_at IS NULL
+         AND revoked_at IS NULL AND expires_at > CURRENT_TIMESTAMP
+         AND EXISTS (SELECT 1 FROM memberships m WHERE m.id = ? AND m.restaurant_id = ?
+           AND m.auth_subject = ? AND m.status = 'active')`
+    ).bind(invitation.id, invitation.membership_id, authUserId,
+      invitation.membership_id, invitation.restaurant_id, authUserId),
+  ]);
+  return Number(result[0].meta?.changes ?? 0) === 1 && Number(result[1].meta?.changes ?? 0) === 1;
 }
 
 export async function revokeInvitation(
