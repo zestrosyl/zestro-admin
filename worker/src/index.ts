@@ -382,8 +382,10 @@ function buildSettingsPayload(member: Member, rawSettings: Record<string, unknow
     qrTableOrderingEnabled: rawSettings.qrTableOrderingEnabled !== false,
     autoAcceptOrders: Boolean(rawSettings.autoAcceptOrders),
     waiterCallSoundEnabled: rawSettings.waiterCallSoundEnabled !== false,
-    workerApiBaseUrl: 'https://zestro-admin-api.zestro-syl.workers.dev',
-    r2PublicBucketUrl: '/api/media',
+    logoKey: String(rawSettings.logoKey || ''),
+    logoUrl: rawSettings.logoKey
+      ? `/api/media?key=${encodeURIComponent(String(rawSettings.logoKey))}`
+      : String(rawSettings.logoUrl || ''),
   };
 }
 
@@ -531,7 +533,59 @@ function mapMediaRow(row: Record<string, unknown>) {
   };
 }
 
-function mapPromotionRow(row: Record<string, unknown>) {
+interface OfferMetaEntry {
+  discountText?: string;
+  hasPromoCode?: boolean;
+}
+
+async function loadOfferMeta(
+  db: D1Database,
+  rid: string
+): Promise<Record<string, OfferMetaEntry>> {
+  const row = await db
+    .prepare(`SELECT settings_json FROM restaurant_settings WHERE restaurant_id = ?`)
+    .bind(rid)
+    .first<{ settings_json: string }>();
+  const raw = safeJsonParse<Record<string, unknown>>(row?.settings_json, {});
+  const meta = raw.offerMeta;
+  return meta && typeof meta === 'object' ? (meta as Record<string, OfferMetaEntry>) : {};
+}
+
+async function saveOfferMeta(
+  db: D1Database,
+  rid: string,
+  offerMeta: Record<string, OfferMetaEntry>
+): Promise<void> {
+  const row = await db
+    .prepare(`SELECT settings_json FROM restaurant_settings WHERE restaurant_id = ?`)
+    .bind(rid)
+    .first<{ settings_json: string }>();
+  const existing = safeJsonParse<Record<string, unknown>>(row?.settings_json, {});
+  const next = { ...existing, offerMeta };
+  await db
+    .prepare(
+      `INSERT INTO restaurant_settings (restaurant_id, settings_json, updated_at)
+       VALUES (?, ?, CURRENT_TIMESTAMP)
+       ON CONFLICT (restaurant_id) DO UPDATE SET
+         settings_json = excluded.settings_json,
+         updated_at = CURRENT_TIMESTAMP`
+    )
+    .bind(rid, JSON.stringify(next))
+    .run();
+}
+
+function isValidIsoDate(value: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value));
+}
+
+function mapPromotionRow(
+  row: Record<string, unknown>,
+  offerMeta: Record<string, OfferMetaEntry> = {}
+) {
+  const id = String(row.id);
+  const rawCode = String(row.code || '');
+  const meta = offerMeta[id];
+  const hasPromoCode = !rawCode.startsWith('__OFFER_') && meta?.hasPromoCode !== false;
   const dt = String(row.discount_type || 'percentage');
   const discountType =
     dt === 'fixed_amount'
@@ -540,10 +594,12 @@ function mapPromotionRow(row: Record<string, unknown>) {
       ? 'Complimentary Item'
       : 'Percentage';
   return {
-    id: String(row.id),
+    id,
     title: String(row.title || ''),
     description: String(row.description || ''),
-    code: String(row.code || ''),
+    code: hasPromoCode ? rawCode : '',
+    hasPromoCode,
+    discountText: typeof meta?.discountText === 'string' ? meta.discountText : '',
     discountType,
     discountValue: Number(row.discount_value_minor || 0) / 100,
     minOrder: Number(row.min_order_minor || 0) / 100,
@@ -1822,54 +1878,79 @@ async function route(
     return json({ ok: true, assignedTo: member.display_name });
   }
 
-  // ── Promotions ──────────────────────────────────────────────────────────
+  // ── Promotions & Homepage Offers ────────────────────────────────────────
   if (path === '/api/promotions' && req.method === 'GET') {
-    const rows = await env.DB.prepare(
-      `SELECT id, title, COALESCE(description, '') AS description, code, discount_type,
-              discount_value_minor, min_order_minor, valid_from, valid_until, active,
-              COALESCE(usage_count, 0) AS usage_count
-       FROM promotions
-       WHERE restaurant_id = ?
-       ORDER BY created_at DESC`
-    )
-      .bind(rid)
-      .all<Record<string, unknown>>();
-    return json((rows.results || []).map(mapPromotionRow));
+    const [rows, offerMeta] = await Promise.all([
+      env.DB.prepare(
+        `SELECT id, title, COALESCE(description, '') AS description, code, discount_type,
+                discount_value_minor, min_order_minor, valid_from, valid_until, active,
+                COALESCE(usage_count, 0) AS usage_count
+         FROM promotions
+         WHERE restaurant_id = ?
+         ORDER BY created_at DESC`
+      )
+        .bind(rid)
+        .all<Record<string, unknown>>(),
+      loadOfferMeta(env.DB, rid),
+    ]);
+    return json((rows.results || []).map((r) => mapPromotionRow(r, offerMeta)));
   }
 
   if (path === '/api/promotions' && req.method === 'POST') {
     if (!canManage(member)) return fail('Insufficient permissions', 403);
     const b = await req.json<Record<string, unknown>>();
-    const title = String(b.title || '').trim();
-    const code = String(b.code || '').trim().toUpperCase();
-    if (!title || !code) return fail('Promotion title and code are required');
+    const title = String(b.title || '').trim().slice(0, 120);
+    if (!title) return fail('Offer title is required');
 
-    const dup = await env.DB.prepare(
-      `SELECT id FROM promotions WHERE restaurant_id = ? AND upper(code) = ? LIMIT 1`
-    )
-      .bind(rid, code)
-      .first();
-    if (dup) return fail(`Promotion code "${code}" already exists.`, 409);
+    const promoId = uid();
+    const rawCode = String(b.code || '').trim().toUpperCase();
+    const hasPromoCode = rawCode.length > 0;
+    if (hasPromoCode && !/^[A-Z0-9_-]{2,32}$/.test(rawCode)) {
+      return fail('Promo code must be 2–32 characters (letters, numbers, - or _).');
+    }
+    const dbCode = hasPromoCode
+      ? rawCode
+      : `__OFFER_${promoId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 10).toUpperCase()}`;
+
+    if (hasPromoCode) {
+      const dup = await env.DB.prepare(
+        `SELECT id FROM promotions WHERE restaurant_id = ? AND upper(code) = ? LIMIT 1`
+      )
+        .bind(rid, dbCode)
+        .first();
+      if (dup) return fail(`Promotion code "${dbCode}" already exists.`, 409);
+    }
 
     const rawType = String(b.discountType || 'Percentage');
-    const dbType =
-      rawType === 'Fixed Amount' || rawType === 'fixed_amount' || rawType === 'fixed'
-        ? 'fixed_amount'
-        : rawType === 'Complimentary Item' || rawType === 'complimentary_item'
-        ? 'complimentary_item'
-        : 'percentage';
+    const dbType = !hasPromoCode
+      ? 'complimentary_item'
+      : rawType === 'Fixed Amount' || rawType === 'fixed_amount' || rawType === 'fixed'
+      ? 'fixed_amount'
+      : rawType === 'Complimentary Item' || rawType === 'complimentary_item'
+      ? 'complimentary_item'
+      : 'percentage';
 
-    const discountValueMinor = Math.max(0, Math.round((Number(b.discountValue) || 0) * 100));
+    const discountValueMinor = hasPromoCode
+      ? Math.max(0, Math.round((Number(b.discountValue) || 0) * 100))
+      : 0;
     if (dbType === 'percentage' && discountValueMinor > 10000) {
       return fail('Percentage discount cannot exceed 100%');
     }
-    const minOrderMinor = Math.max(0, Math.round((Number(b.minOrder) || 0) * 100));
+    const minOrderMinor = hasPromoCode
+      ? Math.max(0, Math.round((Number(b.minOrder) || 0) * 100))
+      : 0;
     const today = new Date().toISOString().slice(0, 10);
-    const validFrom = String(b.validFrom || today).trim();
+    const validFrom = String(b.validFrom !== undefined ? b.validFrom : today).trim();
     const validUntil = String(b.validUntil || '').trim();
-    const description = String(b.description || '').trim();
+    if (validFrom && !isValidIsoDate(validFrom)) return fail('Invalid start date (use YYYY-MM-DD)');
+    if (validUntil && !isValidIsoDate(validUntil)) return fail('Invalid end date (use YYYY-MM-DD)');
+    if (validFrom && validUntil && validFrom > validUntil) {
+      return fail('Start date cannot be after end date');
+    }
+
+    const description = String(b.description || '').trim().slice(0, 240);
+    const discountText = String(b.discountText || '').trim().slice(0, 40);
     const active = b.active === false ? 0 : 1;
-    const promoId = uid();
 
     await env.DB.prepare(
       `INSERT INTO promotions (
@@ -1882,7 +1963,7 @@ async function route(
         rid,
         title,
         description,
-        code,
+        dbCode,
         dbType,
         discountValueMinor,
         minOrderMinor,
@@ -1892,13 +1973,17 @@ async function route(
       )
       .run();
 
-    await audit(env, member, 'promotion.created', 'promotion', promoId, { code });
+    const offerMeta = await loadOfferMeta(env.DB, rid);
+    offerMeta[promoId] = { discountText, hasPromoCode };
+    await saveOfferMeta(env.DB, rid, offerMeta);
+
+    await audit(env, member, 'promotion.created', 'promotion', promoId, { code: dbCode });
     const row = await env.DB.prepare(
       `SELECT * FROM promotions WHERE id = ? AND restaurant_id = ?`
     )
       .bind(promoId, rid)
       .first<Record<string, unknown>>();
-    return json(row ? mapPromotionRow(row) : { id: promoId }, 201);
+    return json(row ? mapPromotionRow(row, offerMeta) : { id: promoId }, 201);
   }
 
   const promoMatch = path.match(/^\/api\/promotions\/([^/]+)$/);
@@ -1913,45 +1998,75 @@ async function route(
     if (!existing) return fail('Promotion not found', 404);
 
     const b = await req.json<Record<string, unknown>>();
-    const title = b.title !== undefined ? String(b.title).trim() : String(existing.title);
-    const code =
-      b.code !== undefined ? String(b.code).trim().toUpperCase() : String(existing.code);
-    if (!title || !code) return fail('Promotion title and code cannot be empty');
+    const title = b.title !== undefined ? String(b.title).trim().slice(0, 120) : String(existing.title);
+    if (!title) return fail('Offer title cannot be empty');
 
-    const dup = await env.DB.prepare(
-      `SELECT id FROM promotions WHERE restaurant_id = ? AND upper(code) = ? AND id != ? LIMIT 1`
-    )
-      .bind(rid, code, promoId)
-      .first();
-    if (dup) return fail(`Promotion code "${code}" is already used by another promotion.`, 409);
+    const existingCode = String(existing.code || '');
+    const offerMeta = await loadOfferMeta(env.DB, rid);
+    const existingMeta = offerMeta[promoId] || {};
 
-    const dbType =
-      b.discountType !== undefined
-        ? b.discountType === 'Fixed Amount' || b.discountType === 'fixed_amount' || b.discountType === 'fixed'
-          ? 'fixed_amount'
-          : b.discountType === 'Complimentary Item' || b.discountType === 'complimentary_item'
-          ? 'complimentary_item'
-          : 'percentage'
-        : String(existing.discount_type);
+    let hasPromoCode = !existingCode.startsWith('__OFFER_') && existingMeta.hasPromoCode !== false;
+    let dbCode = existingCode;
+    if (b.code !== undefined) {
+      const rawCode = String(b.code || '').trim().toUpperCase();
+      if (rawCode.length > 0) {
+        if (!/^[A-Z0-9_-]{2,32}$/.test(rawCode)) {
+          return fail('Promo code must be 2–32 characters (letters, numbers, - or _).');
+        }
+        hasPromoCode = true;
+        dbCode = rawCode;
+        const dup = await env.DB.prepare(
+          `SELECT id FROM promotions WHERE restaurant_id = ? AND upper(code) = ? AND id != ? LIMIT 1`
+        )
+          .bind(rid, dbCode, promoId)
+          .first();
+        if (dup) return fail(`Promotion code "${dbCode}" is already used by another promotion.`, 409);
+      } else {
+        hasPromoCode = false;
+        dbCode = existingCode.startsWith('__OFFER_')
+          ? existingCode
+          : `__OFFER_${promoId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 10).toUpperCase()}`;
+      }
+    }
 
-    const discountValueMinor =
-      b.discountValue !== undefined
-        ? Math.max(0, Math.round((Number(b.discountValue) || 0) * 100))
-        : Number(existing.discount_value_minor || 0);
+    const dbType = !hasPromoCode
+      ? 'complimentary_item'
+      : b.discountType !== undefined
+      ? b.discountType === 'Fixed Amount' || b.discountType === 'fixed_amount' || b.discountType === 'fixed'
+        ? 'fixed_amount'
+        : b.discountType === 'Complimentary Item' || b.discountType === 'complimentary_item'
+        ? 'complimentary_item'
+        : 'percentage'
+      : String(existing.discount_type);
+
+    const discountValueMinor = !hasPromoCode
+      ? 0
+      : b.discountValue !== undefined
+      ? Math.max(0, Math.round((Number(b.discountValue) || 0) * 100))
+      : Number(existing.discount_value_minor || 0);
     if (dbType === 'percentage' && discountValueMinor > 10000) {
       return fail('Percentage discount cannot exceed 100%');
     }
 
-    const minOrderMinor =
-      b.minOrder !== undefined
-        ? Math.max(0, Math.round((Number(b.minOrder) || 0) * 100))
-        : Number(existing.min_order_minor || 0);
+    const minOrderMinor = !hasPromoCode
+      ? 0
+      : b.minOrder !== undefined
+      ? Math.max(0, Math.round((Number(b.minOrder) || 0) * 100))
+      : Number(existing.min_order_minor || 0);
     const description =
-      b.description !== undefined ? String(b.description).trim() : String(existing.description || '');
+      b.description !== undefined
+        ? String(b.description).trim().slice(0, 240)
+        : String(existing.description || '');
     const validFrom =
       b.validFrom !== undefined ? String(b.validFrom).trim() : String(existing.valid_from || '');
     const validUntil =
       b.validUntil !== undefined ? String(b.validUntil).trim() : String(existing.valid_until || '');
+    if (validFrom && !isValidIsoDate(validFrom)) return fail('Invalid start date (use YYYY-MM-DD)');
+    if (validUntil && !isValidIsoDate(validUntil)) return fail('Invalid end date (use YYYY-MM-DD)');
+    if (validFrom && validUntil && validFrom > validUntil) {
+      return fail('Start date cannot be after end date');
+    }
+
     const active =
       b.active !== undefined ? (b.active ? 1 : 0) : Number(existing.active ? 1 : 0);
 
@@ -1964,7 +2079,7 @@ async function route(
       .bind(
         title,
         description,
-        code,
+        dbCode,
         dbType,
         discountValueMinor,
         minOrderMinor,
@@ -1976,13 +2091,20 @@ async function route(
       )
       .run();
 
-    await audit(env, member, 'promotion.updated', 'promotion', promoId, { code });
+    const discountText =
+      b.discountText !== undefined
+        ? String(b.discountText || '').trim().slice(0, 40)
+        : String(existingMeta.discountText || '');
+    offerMeta[promoId] = { discountText, hasPromoCode };
+    await saveOfferMeta(env.DB, rid, offerMeta);
+
+    await audit(env, member, 'promotion.updated', 'promotion', promoId, { code: dbCode });
     const updated = await env.DB.prepare(
       `SELECT * FROM promotions WHERE id = ? AND restaurant_id = ?`
     )
       .bind(promoId, rid)
       .first<Record<string, unknown>>();
-    return json(updated ? mapPromotionRow(updated) : { ok: true });
+    return json(updated ? mapPromotionRow(updated, offerMeta) : { ok: true });
   }
 
   if (promoMatch && req.method === 'DELETE') {
@@ -1994,6 +2116,11 @@ async function route(
       .bind(promoId, rid)
       .run();
     if (!result.meta.changes) return fail('Promotion not found', 404);
+    const offerMeta = await loadOfferMeta(env.DB, rid);
+    if (offerMeta[promoId]) {
+      delete offerMeta[promoId];
+      await saveOfferMeta(env.DB, rid, offerMeta);
+    }
     await audit(env, member, 'promotion.deleted', 'promotion', promoId);
     return json({ ok: true });
   }
@@ -2218,10 +2345,13 @@ async function route(
       if (!obj) return fail('Media object not found', 404);
       const headers = new Headers();
       const rawMime = String(obj.httpMetadata?.contentType || '').toLowerCase();
-      const safeMime = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif'].includes(rawMime)
+      const safeMime = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif', 'image/svg+xml'].includes(rawMime)
         ? rawMime
         : 'image/jpeg';
       headers.set('content-type', safeMime);
+      if (safeMime === 'image/svg+xml') {
+        headers.set('content-security-policy', "default-src 'none'; style-src 'unsafe-inline'; sandbox");
+      }
       if (obj.httpEtag) headers.set('etag', obj.httpEtag);
       headers.set('cache-control', 'private, max-age=300');
       headers.set('x-content-type-options', 'nosniff');
@@ -2248,19 +2378,36 @@ async function route(
       'image/png': 'png',
       'image/webp': 'webp',
       'image/avif': 'avif',
+      'image/svg+xml': 'svg',
     };
     const ext = allowedTypes[contentType];
     if (!ext) {
-      return fail('Unsupported image format. Upload JPEG, PNG, WebP, or AVIF.', 400);
+      return fail('Unsupported image format. Upload PNG, JPG, JPEG, WebP, AVIF, or SVG.', 400);
     }
 
     const body = await req.arrayBuffer();
-    if (body.byteLength < 1 || body.byteLength > 5 * 1024 * 1024) {
-      return fail('Image size must be between 1 byte and 5 MB.', 400);
+    const maxBytes = contentType === 'image/svg+xml' ? 512 * 1024 : 5 * 1024 * 1024;
+    if (body.byteLength < 1 || body.byteLength > maxBytes) {
+      return fail(
+        contentType === 'image/svg+xml'
+          ? 'SVG logo size must be between 1 byte and 512 KB.'
+          : 'Image size must be between 1 byte and 5 MB.',
+        400
+      );
+    }
+
+    if (contentType === 'image/svg+xml') {
+      const svgText = new TextDecoder().decode(body);
+      if (!/<svg[\s>]/i.test(svgText)) {
+        return fail('Invalid SVG file.', 400);
+      }
+      if (/<script|on\w+\s*=|javascript:|<foreignObject|<iframe|<object|<embed/i.test(svgText)) {
+        return fail('SVG contains disallowed active content.', 400);
+      }
     }
 
     const rawFolder = (req.headers.get('x-folder') || 'dishes').trim().toLowerCase();
-    const folder = ['dishes', 'ambiance', 'banners', 'gallery'].includes(rawFolder)
+    const folder = ['dishes', 'ambiance', 'banners', 'gallery', 'branding'].includes(rawFolder)
       ? rawFolder
       : 'dishes';
     const rawTitle = decodeURIComponent(
@@ -2656,6 +2803,24 @@ async function route(
       qrTableOrderingEnabled,
       autoAcceptOrders: Boolean(b.autoAcceptOrders),
       waiterCallSoundEnabled: b.waiterCallSoundEnabled !== false,
+      logoKey: (() => {
+        if (b.logoKey === undefined) return String(existing.logoKey || '');
+        const k = String(b.logoKey || '').trim();
+        if (!k) return '';
+        return k.startsWith(`restaurants/${rid}/`) ? k : String(existing.logoKey || '');
+      })(),
+      logoUrl: (() => {
+        if (b.logoKey !== undefined && !String(b.logoKey || '').trim() && b.logoUrl === undefined) {
+          return '';
+        }
+        if (b.logoUrl === undefined) return String(existing.logoUrl || '');
+        const u = String(b.logoUrl || '').trim();
+        if (!u) return '';
+        if (u.startsWith(`/api/media?key=${encodeURIComponent(`restaurants/${rid}/`)}`) || u.startsWith(`/api/media?key=restaurants/${rid}/`) || u.startsWith('https://')) {
+          return u;
+        }
+        return String(existing.logoUrl || '');
+      })(),
     };
 
     await env.DB.batch([

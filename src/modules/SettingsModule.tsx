@@ -1,20 +1,39 @@
-import React, { useEffect, useState } from 'react';
-import { Save, Cloud } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Save, Upload, Trash2, Image as ImageIcon } from 'lucide-react';
 import { RestaurantSettings } from '../types';
-import { dataService, normalizeCurrencyLabel } from '../services/api';
-import { Badge } from '../components/ui/Primitives';
+import { normalizeCurrencyLabel } from '../services/api';
+import { ADMIN_API_BASE, uploadMediaToR2 } from '../services/liveApi';
+
+const ALLOWED_LOGO_TYPES = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/jpg',
+  'image/webp',
+  'image/avif',
+  'image/svg+xml',
+]);
+
+function resolveAdminLogoPreview(url?: string): string {
+  if (!url) return '';
+  if (url.startsWith('/api/media')) return `${ADMIN_API_BASE}${url}`;
+  return url;
+}
 
 export const SettingsModule: React.FC<{
   settings: RestaurantSettings;
   connected?: boolean;
   canManage?: boolean;
   onSaveSettings: (next: RestaurantSettings) => Promise<boolean> | void;
-}> = ({ settings, connected = true, canManage = true, onSaveSettings }) => {
+}> = ({ settings, canManage = true, onSaveSettings }) => {
   const [draft, setDraft] = useState<RestaurantSettings>({
     ...settings,
     currency: normalizeCurrencyLabel(settings.currency),
   });
   const [saving, setSaving] = useState(false);
+  const [logoUploading, setLogoUploading] = useState(false);
+  const [logoError, setLogoError] = useState<string | null>(null);
+  const [logoMessage, setLogoMessage] = useState<string | null>(null);
+  const logoInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     setDraft({
@@ -23,7 +42,64 @@ export const SettingsModule: React.FC<{
     });
   }, [settings]);
 
-  const endpointStatus = dataService.getEndpointStatus(draft, connected);
+  const handleLogoFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !canManage) return;
+
+    setLogoError(null);
+    setLogoMessage(null);
+
+    const isSvg =
+      file.type === 'image/svg+xml' || file.name.toLowerCase().endsWith('.svg');
+    if (!isSvg && !ALLOWED_LOGO_TYPES.has(file.type)) {
+      setLogoError('Please upload a PNG, JPG, JPEG, WebP, or SVG logo.');
+      return;
+    }
+    const maxBytes = isSvg ? 512 * 1024 : 5 * 1024 * 1024;
+    if (file.size > maxBytes) {
+      setLogoError(isSvg ? 'SVG logo must be 512 KB or smaller.' : 'Logo image must be 5 MB or smaller.');
+      return;
+    }
+
+    setLogoUploading(true);
+    try {
+      const asset = await uploadMediaToR2(file, 'branding', `${draft.restaurantName || 'Restaurant'} Logo`);
+      const next: RestaurantSettings = {
+        ...draft,
+        logoKey: asset.r2Key || '',
+        logoUrl: asset.url,
+      };
+      setDraft(next);
+      const saved = await onSaveSettings(next);
+      if (saved !== false) {
+        setLogoMessage('Logo updated and saved.');
+      }
+    } catch (err) {
+      setLogoError(err instanceof Error ? err.message : 'Logo upload failed.');
+    } finally {
+      setLogoUploading(false);
+    }
+  };
+
+  const handleRemoveLogo = async () => {
+    if (!canManage || logoUploading) return;
+    setLogoError(null);
+    setLogoMessage(null);
+    setLogoUploading(true);
+    try {
+      const next: RestaurantSettings = { ...draft, logoKey: '', logoUrl: '' };
+      setDraft(next);
+      const saved = await onSaveSettings(next);
+      if (saved !== false) {
+        setLogoMessage('Logo removed.');
+      }
+    } catch (err) {
+      setLogoError(err instanceof Error ? err.message : 'Could not remove logo.');
+    } finally {
+      setLogoUploading(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -40,7 +116,7 @@ export const SettingsModule: React.FC<{
     <form onSubmit={handleSubmit} className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-[#F3EBDD]/70">
-          Configure restaurant profile, taxes, delivery rules, ordering channels, and Cloudflare bindings.
+          Configure restaurant profile, branding, taxes, delivery rules, and ordering channels.
         </p>
         {canManage && (
           <button
@@ -244,44 +320,79 @@ export const SettingsModule: React.FC<{
         </div>
 
         <div className="space-y-4 rounded-2xl border border-[#2C3D34] bg-[#1D2922] p-6">
-          <div className="flex items-center justify-between">
-            <h2 className="flex items-center gap-2 font-serif text-lg font-semibold text-[#F3EBDD]">
-              <Cloud className="h-5 w-5 text-[#D7A65A]" /> Cloudflare Backend Status
-            </h2>
-            <Badge variant={endpointStatus.connected ? 'emerald' : 'amber'}>
-              {endpointStatus.connected ? 'Connected · D1 + R2' : 'Disconnected'}
-            </Badge>
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className="flex items-center gap-2 font-serif text-lg font-semibold text-[#F3EBDD]">
+                <ImageIcon className="h-5 w-5 text-[#D7A65A]" /> Restaurant Branding
+              </h2>
+              <p className="mt-1 text-xs text-[#F3EBDD]/65">
+                Upload your restaurant logo to display in the customer website header.
+              </p>
+            </div>
           </div>
-          <p className="text-xs text-[#F3EBDD]/65">
-            All modules — menu, categories, orders, tables, waiter calls, promotions, staff memberships,
-            homepage configuration, gallery photography, R2 media uploads, and restaurant settings — persist
-            directly to Cloudflare D1 and R2 behind Cloudflare Access authentication.
-          </p>
-          <div>
-            <label className="mb-1.5 block text-xs font-medium text-[#F3EBDD]/75">
-              Cloudflare Worker API Base URL
-            </label>
-            <input
-              type="url"
-              disabled={!canManage}
-              value={draft.workerApiBaseUrl}
-              onChange={(e) => setDraft({ ...draft, workerApiBaseUrl: e.target.value })}
-              placeholder="https://zestro-admin-api.zestro-syl.workers.dev"
-              className="w-full rounded-xl border border-[#2C3D34] bg-[#101B17] px-3.5 py-2.5 text-sm text-[#F3EBDD]"
-            />
-          </div>
-          <div>
-            <label className="mb-1.5 block text-xs font-medium text-[#F3EBDD]/75">
-              R2 Media Delivery Endpoint
-            </label>
-            <input
-              type="text"
-              disabled={!canManage}
-              value={draft.r2PublicBucketUrl}
-              onChange={(e) => setDraft({ ...draft, r2PublicBucketUrl: e.target.value })}
-              placeholder="https://zestro-customer-api.zestro-syl.workers.dev/api/media"
-              className="w-full rounded-xl border border-[#2C3D34] bg-[#101B17] px-3.5 py-2.5 text-sm text-[#F3EBDD]"
-            />
+
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+            <div className="flex h-24 w-48 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-[#2C3D34] bg-[#101B17] p-3">
+              {draft.logoUrl ? (
+                <img
+                  src={resolveAdminLogoPreview(draft.logoUrl)}
+                  alt={`${draft.restaurantName || 'Restaurant'} logo`}
+                  className="max-h-full max-w-full object-contain"
+                />
+              ) : (
+                <div className="flex flex-col items-center gap-1 text-center text-[#F3EBDD]/45">
+                  <ImageIcon className="h-5 w-5" />
+                  <span className="text-[11px]">No custom logo</span>
+                </div>
+              )}
+            </div>
+
+            <div className="flex flex-1 flex-col gap-2.5">
+              <input
+                ref={logoInputRef}
+                type="file"
+                accept=".png,.jpg,.jpeg,.webp,.avif,.svg,image/png,image/jpeg,image/webp,image/avif,image/svg+xml"
+                className="hidden"
+                onChange={handleLogoFileChange}
+              />
+              <div className="flex flex-wrap items-center gap-2">
+                {canManage && (
+                  <button
+                    type="button"
+                    disabled={logoUploading}
+                    onClick={() => logoInputRef.current?.click()}
+                    className="inline-flex items-center gap-2 rounded-xl border border-[#D7A65A]/45 bg-[#D7A65A]/15 px-3.5 py-2 text-xs font-semibold text-[#D7A65A] transition hover:bg-[#D7A65A]/25 disabled:opacity-50"
+                  >
+                    <Upload className="h-3.5 w-3.5" />
+                    {logoUploading
+                      ? 'Uploading...'
+                      : draft.logoUrl
+                      ? 'Replace Logo'
+                      : 'Upload Logo'}
+                  </button>
+                )}
+                {canManage && draft.logoUrl && (
+                  <button
+                    type="button"
+                    disabled={logoUploading}
+                    onClick={handleRemoveLogo}
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs font-medium text-rose-300 transition hover:bg-rose-500/20 disabled:opacity-50"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Remove
+                  </button>
+                )}
+              </div>
+              <p className="text-[11px] text-[#F3EBDD]/55">
+                Supports PNG, JPG, JPEG, WebP, or SVG. Recommended transparent background (max 5 MB; 512 KB for SVG).
+              </p>
+              {logoError && (
+                <p className="text-xs font-medium text-rose-300">{logoError}</p>
+              )}
+              {logoMessage && (
+                <p className="text-xs font-medium text-emerald-300">{logoMessage}</p>
+              )}
+            </div>
           </div>
         </div>
       </div>

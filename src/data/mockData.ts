@@ -466,8 +466,8 @@ export const INITIAL_SETTINGS: RestaurantSettings = {
   qrTableOrderingEnabled: true,
   autoAcceptOrders: false,
   waiterCallSoundEnabled: true,
-  workerApiBaseUrl: '',
-  r2PublicBucketUrl: '',
+  logoKey: '',
+  logoUrl: '',
 };
 
 export const INITIAL_ACTIVITY: ActivityEvent[] = [

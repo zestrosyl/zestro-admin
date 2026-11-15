@@ -214,10 +214,13 @@ async function handle(req: Request, env: Env): Promise<Response> {
     }
     const h = new Headers();
     const rawMime = String(object.httpMetadata?.contentType || '').toLowerCase();
-    const safeMime = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif'].includes(rawMime)
+    const safeMime = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif', 'image/svg+xml'].includes(rawMime)
       ? rawMime
       : 'image/jpeg';
     h.set('content-type', safeMime);
+    if (safeMime === 'image/svg+xml') {
+      h.set('content-security-policy', "default-src 'none'; style-src 'unsafe-inline'; sandbox");
+    }
     if (object.httpEtag) h.set('etag', object.httpEtag);
     h.set('cache-control', 'public, max-age=3600');
     h.set('access-control-allow-origin', origin && parseAllowedOrigins(env).includes(origin) ? origin : '*');
@@ -345,13 +348,28 @@ async function handle(req: Request, env: Env): Promise<Response> {
       });
 
     const today = new Date().toISOString().slice(0, 10);
-    const promotions = (promos.results || [])
+    const rawOfferMeta =
+      rawSettings.offerMeta && typeof rawSettings.offerMeta === 'object'
+        ? (rawSettings.offerMeta as Record<string, { discountText?: string; hasPromoCode?: boolean }>)
+        : {};
+
+    const validPromoRows = (promos.results || []).filter((p) => {
+      const from = String(p.valid_from || '').slice(0, 10);
+      const until = String(p.valid_until || '').slice(0, 10);
+      if (from && from > today) return false;
+      if (until && until < today) return false;
+      return true;
+    });
+
+    const promotions = validPromoRows
       .filter((p) => {
-        const from = String(p.valid_from || '').slice(0, 10);
-        const until = String(p.valid_until || '').slice(0, 10);
-        if (from && from > today) return false;
-        if (until && until < today) return false;
-        return p.discount_type === 'percentage' || p.discount_type === 'fixed_amount';
+        const code = String(p.code || '');
+        const meta = rawOfferMeta[String(p.id)];
+        const hasPromoCode = !code.startsWith('__OFFER_') && meta?.hasPromoCode !== false;
+        return (
+          hasPromoCode &&
+          (p.discount_type === 'percentage' || p.discount_type === 'fixed_amount')
+        );
       })
       .map((p) => ({
         id: String(p.id),
@@ -364,6 +382,26 @@ async function handle(req: Request, env: Env): Promise<Response> {
         minOrderAmount: Number(p.min_order_minor || 0) / 100,
         validUntil: String(p.valid_until || ''),
       }));
+
+    const offers = validPromoRows.map((p) => {
+      const id = String(p.id);
+      const rawCode = String(p.code || '').toUpperCase();
+      const meta = rawOfferMeta[id];
+      const hasPromoCode = !rawCode.startsWith('__OFFER_') && meta?.hasPromoCode !== false;
+      const derivedDiscountText =
+        p.discount_type === 'percentage' && Number(p.discount_value_minor || 0) > 0
+          ? `${Number(p.discount_value_minor) / 100}% OFF`
+          : '';
+      return {
+        id,
+        title: String(p.title || ''),
+        description: String(p.description || ''),
+        discountText: String(meta?.discountText || derivedDiscountText || ''),
+        code: hasPromoCode ? rawCode : '',
+        validFrom: String(p.valid_from || ''),
+        validUntil: String(p.valid_until || ''),
+      };
+    });
 
     const gallery = (galleryRows.results || []).map((g, idx) => ({
       id: String(g.id),
@@ -409,10 +447,16 @@ async function handle(req: Request, env: Env): Promise<Response> {
         products,
         customisationGroups: Array.from(groupMap.values()),
         promotions,
+        offers,
         gallery,
         homepage,
         settings: {
           restaurantName: String(rawSettings.restaurantName || restaurant.name || 'Zestro'),
+          logoUrl: resolvePublicMediaUrl(
+            workerOrigin,
+            rawSettings.logoKey ? String(rawSettings.logoKey) : null,
+            rawSettings.logoUrl ? String(rawSettings.logoUrl) : null
+          ),
           whatsappNumber: String(
             rawSettings.whatsappNumber || rawSettings.phone || env.WHATSAPP_NUMBER || ''
           ),
@@ -898,6 +942,10 @@ async function handle(req: Request, env: Env): Promise<Response> {
     let appliedPromoId: string | null = null;
     let appliedPromoCode: string | null = null;
     const rawPromoCode = String(b.promoCode || '').trim().toUpperCase();
+
+    if (rawPromoCode.startsWith('__OFFER_')) {
+      return json(err('Invalid promo code.'), 400, origin, env);
+    }
 
     if (rawPromoCode) {
       const promo = await env.DB.prepare(

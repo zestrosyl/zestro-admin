@@ -12,16 +12,11 @@ export interface StorageAdapter {
 
 export const dataService: StorageAdapter = {
   mode: 'cloudflare-worker',
-  getEndpointStatus(settings, connected = true) {
-    const configured = Boolean(settings.workerApiBaseUrl.trim());
+  getEndpointStatus(_settings, connected = true) {
     return {
-      configured,
+      configured: true,
       connected,
-      label: connected
-        ? 'Live Cloudflare Worker · D1 & R2 persistent storage active'
-        : configured
-        ? 'Cloudflare Worker configured · awaiting connection'
-        : 'Cloudflare Worker endpoint not configured',
+      label: connected ? 'Connected' : 'Reconnecting',
     };
   },
   buildR2Key(folder: string, filename: string) {
