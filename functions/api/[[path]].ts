@@ -6,6 +6,8 @@ const ALLOWED_AUTH_PATHS = new Set([
   '/api/auth/get-session',
   '/api/auth/request-password-reset',
   '/api/auth/reset-password',
+  '/api/auth/invitation-preview',
+  '/api/auth/accept-invitation',
 ]);
 
 function getBetterAuthCookie(request: Request): string | null {
