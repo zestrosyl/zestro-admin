@@ -551,6 +551,12 @@ async function route(
     return json({ ok: true, email: invitation.email });
   }
 
+  // Never expose Better Auth's generic signup endpoint. Account creation is
+  // performed only inside the one-time invitation acceptance handler above.
+  if (path === '/api/auth/sign-up/email' || path === '/api/auth/sign-up') {
+    return fail('Open signup is disabled. Use a valid restaurant invitation.', 404);
+  }
+
   if (path.startsWith('/api/auth/')) {
     return handleAuthRequest(req, env, ctx);
   }
