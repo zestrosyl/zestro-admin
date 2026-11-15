@@ -8,6 +8,7 @@ export type ModuleId =
   | 'orders'
   | 'tables'
   | 'waiter-calls'
+  | 'customers'
   | 'promotions'
   | 'staff'
   | 'settings';

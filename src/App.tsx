@@ -34,6 +34,7 @@ import { GalleryModule } from './modules/GalleryModule';
 import { OrdersModule } from './modules/OrdersModule';
 import { TablesModule } from './modules/TablesModule';
 import { WaiterCallsModule } from './modules/WaiterCallsModule';
+import { CustomersModule } from './modules/CustomersModule';
 import { PromotionsModule } from './modules/PromotionsModule';
 import { StaffModule } from './modules/StaffModule';
 import { SettingsModule } from './modules/SettingsModule';
@@ -366,7 +367,6 @@ export function App() {
         incomingWaiterCallsCount={incomingWaiterCallsCount}
         restaurantName={settings.restaurantName || tenant?.name || 'ZESTRO'}
         currentUser={currentUser}
-        connected={connected}
       />
 
       <div className="flex min-w-0 flex-1 flex-col">
@@ -824,6 +824,14 @@ export function App() {
                       return false;
                     }
                   }}
+                />
+              )}
+
+              {activeModule === 'customers' && (
+                <CustomersModule
+                  orders={orders}
+                  currency={settings.currency}
+                  globalSearch={globalSearch}
                 />
               )}
 
