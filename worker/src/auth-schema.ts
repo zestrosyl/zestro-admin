@@ -23,7 +23,6 @@ export function createAuth(env: AuthEnv, ctx?: ExecutionContext) {
     database: env.DB,
     emailAndPassword: {
       enabled: true,
-      disableSignUp: true,
       minPasswordLength: 12,
       maxPasswordLength: 128,
       async sendResetPassword({ user, url }) {
