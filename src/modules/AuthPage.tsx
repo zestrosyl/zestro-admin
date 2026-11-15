@@ -40,7 +40,7 @@ export const AuthPage: React.FC<{ onAuthenticated: () => void }> = ({ onAuthenti
         await authRequest('/sign-in/email', { email: email.trim().toLowerCase(), password });
         onAuthenticated();
       } else {
-        await authRequest('/forget-password', {
+        await authRequest('/request-password-reset', {
           email: email.trim().toLowerCase(),
           redirectTo: `${window.location.origin}/reset-password`,
         });
