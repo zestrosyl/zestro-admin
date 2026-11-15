@@ -7,6 +7,8 @@ workers_dev = true
 ALLOWED_ORIGINS = "https://zestro-admin.pages.dev,https://live-backend-nov-14-2026.zestro-admin.pages.dev"
 ACCESS_TEAM_DOMAIN = "icy-wave-d29d.cloudflareaccess.com"
 ACCESS_AUD = "46d30912b2ddf47b1b05c8929045e3b5f54f03dfe1ea677cd7be243ebed7c902"
+BETTER_AUTH_URL = "https://zestro-admin-api.zestro-syl.workers.dev"
+ADMIN_APP_URL = "https://zestro-admin.pages.dev"
 
 [[d1_databases]]
 binding = "DB"
