@@ -7,7 +7,7 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "typecheck": "tsc --noEmit",
-    "test": "node --test test/production-repair.test.mjs test/branding-offers.test.mjs test/trial-mvp.test.mjs test/auth-workflow.integration.test.mjs",
+    "test": "node --test test/production-repair.test.mjs test/branding-offers.test.mjs test/trial-mvp.test.mjs test/auth-workflow.integration.test.mjs test/auth-workflow.integration.test.mjs",
     "test:auth-integration": "node --test test/auth-workflow.integration.test.mjs"
   },
   "dependencies": {
