@@ -1,6 +1,8 @@
 import { createRemoteJWKSet, jwtVerify, type JWTVerifyGetKey } from 'jose';
+import { authenticateSession, type SessionAuthEnv } from './auth-middleware';
+import { handleAuthRequest, type AuthEnv } from './auth-schema';
 
-export interface Env {
+export interface Env extends SessionAuthEnv {
   DB: D1Database;
   MEDIA: R2Bucket;
   ACCESS_TEAM_DOMAIN: string;
@@ -168,133 +170,6 @@ const canManage = (m: Member): boolean =>
 
 const canManageStaff = (m: Member): boolean =>
   ['owner', 'admin'].includes(m.role);
-
-async function authenticate(
-  req: Request,
-  env: Env,
-  options?: AdminWorkerOptions
-): Promise<AuthOutcome> {
-  const token = extractToken(req);
-  const teamDomain = (env.ACCESS_TEAM_DOMAIN || '')
-    .trim()
-    .replace(/^https?:\/\//i, '')
-    .replace(/\/+$/, '');
-  const aud = (env.ACCESS_AUD || '').trim();
-  if (!token || !teamDomain || !aud || aud.startsWith('replace-')) {
-    return { kind: 'unauthenticated', message: 'Authentication required' };
-  }
-
-  let subject = '';
-  let email = '';
-  try {
-    const issuer = `https://${teamDomain}`;
-    const keyOrSet = options?.keySetOverride ?? getCachedJwks(issuer);
-    const { payload } = await jwtVerify(token, keyOrSet as JWTVerifyGetKey, {
-      issuer,
-      audience: aud,
-    });
-    subject = String(payload.sub || '').trim();
-    email = String(payload.email || '').trim().toLowerCase();
-    if (!subject || !email) {
-      return { kind: 'unauthenticated', message: 'Invalid identity token claims' };
-    }
-  } catch {
-    return { kind: 'unauthenticated', message: 'Invalid or expired authentication token' };
-  }
-
-  const url = new URL(req.url);
-  const requestedRestaurantId = (
-    req.headers.get('X-Restaurant-Id') ||
-    url.searchParams.get('restaurantId') ||
-    ''
-  ).trim();
-
-  const baseSelect = `
-    SELECT
-      m.id,
-      m.restaurant_id,
-      m.auth_subject,
-      m.email,
-      m.display_name,
-      m.role,
-      COALESCE(m.job_title, '') AS job_title,
-      r.name AS restaurant_name,
-      r.slug AS restaurant_slug,
-      r.currency AS restaurant_currency,
-      r.timezone AS restaurant_timezone,
-      r.status AS restaurant_status
-    FROM memberships m
-    JOIN restaurants r ON r.id = m.restaurant_id
-  `;
-
-  const roleOrder = `
-    ORDER BY
-      CASE m.role
-        WHEN 'owner' THEN 1
-        WHEN 'admin' THEN 2
-        WHEN 'manager' THEN 3
-        WHEN 'staff' THEN 4
-        ELSE 5
-      END,
-      m.created_at ASC
-    LIMIT 1
-  `;
-
-  let member: Member | null = null;
-  if (requestedRestaurantId) {
-    member = await env.DB.prepare(
-      `${baseSelect} WHERE m.restaurant_id = ? AND m.auth_subject = ? AND lower(m.email) = ? AND m.status = 'active' AND r.status = 'active' LIMIT 1`
-    )
-      .bind(requestedRestaurantId, subject, email)
-      .first<Member>();
-  } else {
-    member = await env.DB.prepare(
-      `${baseSelect} WHERE m.auth_subject = ? AND lower(m.email) = ? AND m.status = 'active' AND r.status = 'active' ${roleOrder}`
-    )
-      .bind(subject, email)
-      .first<Member>();
-  }
-
-  // First-time Cloudflare Access sign-in for an invited team member: bind verified subject
-  if (!member) {
-    const invitedQuery = requestedRestaurantId
-      ? `${baseSelect} WHERE m.restaurant_id = ? AND lower(m.email) = ? AND m.status IN ('invited', 'active') AND (m.auth_subject LIKE 'invited:%' OR m.auth_subject LIKE 'pending:%') AND r.status = 'active' LIMIT 1`
-      : `${baseSelect} WHERE lower(m.email) = ? AND m.status IN ('invited', 'active') AND (m.auth_subject LIKE 'invited:%' OR m.auth_subject LIKE 'pending:%') AND r.status = 'active' ${roleOrder}`;
-
-    const pendingMember = requestedRestaurantId
-      ? await env.DB.prepare(invitedQuery).bind(requestedRestaurantId, email).first<Member>()
-      : await env.DB.prepare(invitedQuery).bind(email).first<Member>();
-
-    if (pendingMember) {
-      await env.DB.prepare(
-        `UPDATE memberships SET auth_subject = ?, status = 'active' WHERE id = ? AND restaurant_id = ?`
-      )
-        .bind(subject, pendingMember.id, pendingMember.restaurant_id)
-        .run();
-      member = { ...pendingMember, auth_subject: subject };
-    }
-  }
-
-  if (!member) {
-    if (requestedRestaurantId) {
-      // Distinguish cross-tenant access attempt by an otherwise valid member from completely unknown user
-      const anyMembership = await env.DB.prepare(
-        `SELECT m.id FROM memberships m JOIN restaurants r ON r.id = m.restaurant_id WHERE lower(m.email) = ? AND m.status IN ('active', 'invited') AND r.status = 'active' LIMIT 1`
-      )
-        .bind(email)
-        .first();
-      if (anyMembership) {
-        return { kind: 'forbidden', message: 'Access denied for the requested restaurant tenant' };
-      }
-    }
-    return {
-      kind: 'forbidden',
-      message: 'Your account is not registered as an active staff member for this restaurant.',
-    };
-  }
-
-  return { kind: 'ok', member };
-}
 
 async function audit(
   env: Env,
@@ -664,11 +539,18 @@ async function route(
     return json({ ok: true, service: 'zestro-admin-api', time: new Date().toISOString() });
   }
 
-  if (!path.startsWith('/api/')) {
-    return fail('Not found', 404);
+  if (path.startsWith('/api/auth/')) {
+    return handleAuthRequest(req, env);
   }
 
-  const auth = await authenticate(req, env, options);
+  if (!path.startsWith('/api/')) return fail('Not found', 404);
+
+  const auth = await authenticateSession(req, env);
+  if (auth.kind === 'unauthenticated') return fail(auth.message, 401);
+  if (auth.kind === 'forbidden') return fail(auth.message, 403);
+  const member = auth.member;
+  const rid = member.restaurant_id;
+
   if (auth.kind === 'unauthenticated') {
     return fail(auth.message, 401);
   }
@@ -2848,7 +2730,7 @@ async function route(
   return fail('Route not found', 404);
 }
 
-export function createAdminHandler(options?: AdminWorkerOptions) {
+export function createAdminHandler() {
   return {
     async fetch(req: Request, env: Env): Promise<Response> {
       const origin = req.headers.get('Origin');
@@ -2856,7 +2738,7 @@ export function createAdminHandler(options?: AdminWorkerOptions) {
         return withCors(fail('Origin not allowed', 403), null, env);
       }
       try {
-        const res = await route(req, env, options);
+        const res = await route(req, env);
         return withCors(res, origin, env);
       } catch (error) {
         console.error('ZESTRO Admin API unhandled error:', error);
