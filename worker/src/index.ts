@@ -1,5 +1,4 @@
-import { createRemoteJWKSet, jwtVerify, type JWTVerifyGetKey } from 'jose';
-import { authenticateSession, type SessionAuthEnv } from './auth-middleware';
+import { authenticateSession, type SessionAuthEnv, type SessionAuthOutcome } from './auth-middleware';
 import { handleAuthRequest, type AuthEnv } from './auth-schema';
 
 export interface Env extends SessionAuthEnv {
@@ -28,24 +27,10 @@ interface Member {
   restaurant_status: string;
 }
 
-type AuthOutcome =
-  | { kind: 'ok'; member: Member }
-  | { kind: 'unauthenticated'; message: string }
-  | { kind: 'forbidden'; message: string };
-
+// Dependency injection is available only to unit tests. The exported Worker
+// uses authenticateSession by default for every business API route.
 export interface AdminWorkerOptions {
-  keySetOverride?: JWTVerifyGetKey | CryptoKey | Uint8Array;
-}
-
-const jwksCache = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
-
-function getCachedJwks(issuer: string): ReturnType<typeof createRemoteJWKSet> {
-  let cached = jwksCache.get(issuer);
-  if (!cached) {
-    cached = createRemoteJWKSet(new URL(`${issuer}/cdn-cgi/access/certs`));
-    jwksCache.set(issuer, cached);
-  }
-  return cached;
+  sessionResolver?: (req: Request, env: Env) => Promise<SessionAuthOutcome>;
 }
 
 const uid = () => crypto.randomUUID();
@@ -82,20 +67,6 @@ function withCors(response: Response, origin: string | null, env: Env): Response
   headers.set('x-content-type-options', 'nosniff');
   headers.set('referrer-policy', 'strict-origin-when-cross-origin');
   return new Response(response.body, { status: response.status, headers });
-}
-
-function extractToken(req: Request): string | null {
-  const header = req.headers.get('Cf-Access-Jwt-Assertion');
-  if (header && header.trim()) return header.trim();
-  const cookie = req.headers.get('cookie') || '';
-  for (const part of cookie.split(';')) {
-    const [k, ...rest] = part.trim().split('=');
-    if (k === 'CF_Authorization' && rest.length > 0) {
-      const val = rest.join('=').trim();
-      if (val) return val;
-    }
-  }
-  return null;
 }
 
 function safeJsonParse<T>(raw: string | null | undefined, fallback: T): T {
@@ -526,7 +497,8 @@ function mapGalleryRow(row: Record<string, unknown>) {
 async function route(
   req: Request,
   env: Env,
-  ctx?: ExecutionContext
+  ctx?: ExecutionContext,
+  sessionResolver?: (req: Request, env: Env) => Promise<SessionAuthOutcome>
 ): Promise<Response> {
   const url = new URL(req.url);
   const path = url.pathname;
@@ -545,7 +517,7 @@ async function route(
 
   if (!path.startsWith('/api/')) return fail('Not found', 404);
 
-  const auth = await authenticateSession(req, env);
+  const auth = await (sessionResolver || authenticateSession)(req, env);
   if (auth.kind === 'unauthenticated') return fail(auth.message, 401);
   if (auth.kind === 'forbidden') return fail(auth.message, 403);
   const member = auth.member;
@@ -2721,7 +2693,7 @@ async function route(
   return fail('Route not found', 404);
 }
 
-export function createAdminHandler() {
+export function createAdminHandler(options?: AdminWorkerOptions) {
   return {
     async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
       const origin = req.headers.get('Origin');
@@ -2729,7 +2701,7 @@ export function createAdminHandler() {
         return withCors(fail('Origin not allowed', 403), null, env);
       }
       try {
-        const res = await route(req, env, ctx);
+        const res = await route(req, env, ctx, options?.sessionResolver);
         return withCors(res, origin, env);
       } catch (error) {
         console.error('ZESTRO Admin API unhandled error:', error);
