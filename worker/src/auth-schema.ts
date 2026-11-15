@@ -38,7 +38,12 @@ export function createAuth(env: AuthEnv) {
       disableSignUp: true,
       minPasswordLength: 12,
       maxPasswordLength: 128,
-      revokeSessionsOnPasswordReset: true,
+      async onPasswordReset({ user: authUser }) {
+        // D1 has no interactive transaction support for Better Auth's combined
+        // reset + revoke flow. This idempotent one-statement cleanup is a
+        // separate post-reset step; failures are surfaced and require recovery.
+        await env.DB.prepare('DELETE FROM session WHERE userId = ?').bind(authUser.id).run();
+      },
       requireEmailVerification: false,
       async sendResetPassword({ user: authUser, url }) {
         if (!env.RESEND_API_KEY || !env.RESEND_FROM_EMAIL) {
@@ -67,8 +72,8 @@ export function createAuth(env: AuthEnv) {
       },
     },
     session: {
-      expiresIn: 60 * 60 * 12,
-      updateAge: 60 * 60,
+      expiresIn: 60 * 60 * 4,
+      updateAge: 60 * 30,
       cookieCache: { enabled: false },
     },
     trustedOrigins: [adminOrigin],
