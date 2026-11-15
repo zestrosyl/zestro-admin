@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, Loader2, RefreshCw } from 'lucide-react';
 import { adminApi } from './services/liveApi';
+import { useRealtimeSync, type RealtimeResource } from './hooks/useRealtimeSync';
 import { normalizeCurrencyLabel } from './services/api';
 import {
   ActivityEvent,
@@ -324,25 +325,22 @@ export function App() {
     void loadAllLiveData(false);
   }, [loadAllLiveData]);
 
-  // Poll live operational queues (orders, waiter calls, tables, activity) every 20s while visible
-  useEffect(() => {
-    if (!currentUser || fatalError) return;
-    const timer = window.setInterval(() => {
-      if (document.visibilityState !== 'visible') return;
-      void Promise.allSettled([
-        adminApi<Order[]>('/api/orders'),
-        adminApi<WaiterCall[]>('/api/waiter-calls'),
-        adminApi<RestaurantTable[]>('/api/tables'),
-        adminApi<ActivityEvent[]>('/api/activities'),
-      ]).then(([ordersRes, callsRes, tablesRes, actRes]) => {
-        if (ordersRes.status === 'fulfilled') setOrders(ordersRes.value);
-        if (callsRes.status === 'fulfilled') setWaiterCalls(callsRes.value);
-        if (tablesRes.status === 'fulfilled') setTables(tablesRes.value);
-        if (actRes.status === 'fulfilled') setActivities(actRes.value);
-      });
-    }, 20000);
-    return () => window.clearInterval(timer);
-  }, [currentUser, fatalError]);
+  // Real-time sync: WebSocket events refetch only the affected operational queues.
+  // Falls back to the previous 20s visible-tab polling only while the live channel is down.
+  const refetchOperational = useCallback(async (resources: RealtimeResource[]) => {
+    const want = new Set(resources);
+    await Promise.allSettled([
+      want.has('orders') ? adminApi<Order[]>('/api/orders').then(setOrders) : null,
+      want.has('waiter-calls')
+        ? adminApi<WaiterCall[]>('/api/waiter-calls').then(setWaiterCalls)
+        : null,
+      want.has('tables') ? adminApi<RestaurantTable[]>('/api/tables').then(setTables) : null,
+      want.has('activities')
+        ? adminApi<ActivityEvent[]>('/api/activities').then(setActivities)
+        : null,
+    ]);
+  }, []);
+  const realtimeStatus = useRealtimeSync(Boolean(currentUser && !fatalError), refetchOperational);
 
   const role = currentUser?.role ?? 'viewer';
   const canManage = role === 'owner' || role === 'admin' || role === 'manager';
@@ -384,6 +382,7 @@ export function App() {
           refreshing={refreshing}
           globalSearch={globalSearch}
           onGlobalSearchChange={setGlobalSearch}
+          realtimeStatus={realtimeStatus}
         />
 
         <main className="flex-1 p-4 sm:p-6 lg:p-8">

@@ -17,3 +17,14 @@ migrations_dir = "migrations"
 [[r2_buckets]]
 binding = "MEDIA"
 bucket_name = "zestro-media"
+
+# Real-time Admin Dashboard updates (WebSocket Hibernation API).
+# One RestaurantRealtime instance per restaurant; no D1 schema change.
+[[durable_objects.bindings]]
+name = "REALTIME"
+class_name = "RestaurantRealtime"
+
+# One-time Durable Object class creation (SQLite-backed storage, required on Workers Free).
+[[migrations]]
+tag = "v1-realtime"
+new_sqlite_classes = ["RestaurantRealtime"]
