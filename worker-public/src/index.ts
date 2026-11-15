@@ -45,8 +45,9 @@ function json(data: unknown, status = 200, origin: string | null = null, env?: E
   if (env && origin && parseAllowedOrigins(env).includes(origin)) {
     headers.set('access-control-allow-origin', origin);
     headers.set('vary', 'Origin');
+    headers.set('access-control-allow-credentials', 'true');
   }
-  headers.set('access-control-allow-methods', 'GET,POST,OPTIONS');
+  headers.set('access-control-allow-methods', 'GET,POST,PATCH,OPTIONS');
   headers.set('access-control-allow-headers', 'Content-Type,Idempotency-Key,X-Restaurant-Slug');
   return new Response(JSON.stringify(data), { status, headers });
 }
@@ -191,12 +192,13 @@ async function handle(req: Request, env: Env): Promise<Response> {
   const origin = req.headers.get('Origin');
   if (req.method === 'OPTIONS') {
     const h = new Headers({
-      'access-control-allow-methods': 'GET,POST,OPTIONS',
+      'access-control-allow-methods': 'GET,POST,PATCH,OPTIONS',
       'access-control-allow-headers': 'Content-Type,Idempotency-Key,X-Restaurant-Slug',
     });
     if (origin && parseAllowedOrigins(env).includes(origin)) {
       h.set('access-control-allow-origin', origin);
       h.set('vary', 'Origin');
+      h.set('access-control-allow-credentials', 'true');
     }
     return new Response(null, { status: 204, headers: h });
   }
