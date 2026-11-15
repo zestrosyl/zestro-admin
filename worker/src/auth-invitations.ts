@@ -87,27 +87,50 @@ export async function consumeInvitation(
   ).bind(tokenHash).first<InvitationRecord>();
   if (!invitation) return null;
 
-  // D1 batch is transactional. The conditional update provides single-use
-  // consumption even when two requests race; the membership binding is not
-  // activated until the Better Auth user/password operation has completed.
+  // Reserve the membership first only while the invitation is still valid.
+  // The second statement consumes the token only if that reservation is present.
+  // Both operations are one D1 batch; retries can complete a reserved-but-not-
+  // consumed invitation without activating the membership.
   const result = await env.DB.batch([
-    env.DB.prepare(
-      `UPDATE auth_invitation_tokens
-       SET consumed_at = CURRENT_TIMESTAMP
-       WHERE id = ? AND consumed_at IS NULL AND revoked_at IS NULL
-         AND expires_at > CURRENT_TIMESTAMP`
-    ).bind(invitation.id),
     env.DB.prepare(
       `UPDATE memberships
        SET auth_subject = 'pending-auth:' || id
-       WHERE id = ? AND restaurant_id = ? AND status = 'invited'`
-    ).bind(invitation.membership_id, invitation.restaurant_id),
+       WHERE id = ? AND restaurant_id = ? AND status = 'invited'
+         AND (auth_subject IS NULL OR auth_subject = '' OR auth_subject = 'pending-auth:' || id)
+         AND EXISTS (
+           SELECT 1 FROM auth_invitation_tokens t
+           WHERE t.id = ? AND t.membership_id = memberships.id
+             AND t.token_hash = ? AND t.consumed_at IS NULL
+             AND t.revoked_at IS NULL AND t.expires_at > CURRENT_TIMESTAMP
+         )`
+    ).bind(invitation.membership_id, invitation.restaurant_id, invitation.id, tokenHash),
+    env.DB.prepare(
+      `UPDATE auth_invitation_tokens
+       SET consumed_at = CURRENT_TIMESTAMP
+       WHERE id = ? AND membership_id = ? AND token_hash = ?
+         AND consumed_at IS NULL AND revoked_at IS NULL
+         AND expires_at > CURRENT_TIMESTAMP
+         AND EXISTS (
+           SELECT 1 FROM memberships m
+           WHERE m.id = ? AND m.restaurant_id = ?
+             AND m.status = 'invited'
+             AND m.auth_subject = 'pending-auth:' || m.id
+         )`
+    ).bind(
+      invitation.id,
+      invitation.membership_id,
+      tokenHash,
+      invitation.membership_id,
+      invitation.restaurant_id
+    ),
   ]);
 
-  const consumed = Number((result[0] as D1Result).meta?.changes ?? 0);
-  const membershipTouched = Number((result[1] as D1Result).meta?.changes ?? 0);
-  if (consumed !== 1 || membershipTouched !== 1) return null;
-  return invitation;
+  if (Number(result[1].meta?.changes ?? 0) !== 1) return null;
+  const consumed = await env.DB.prepare(
+    `SELECT * FROM auth_invitation_tokens
+     WHERE id = ? AND consumed_at IS NOT NULL AND revoked_at IS NULL LIMIT 1`
+  ).bind(invitation.id).first<InvitationRecord>();
+  return consumed || null;
 }
 
 export async function attachAuthUserToInvitation(
@@ -120,8 +143,43 @@ export async function attachAuthUserToInvitation(
     `UPDATE memberships
      SET auth_subject = ?
      WHERE id = ? AND restaurant_id = ? AND status = 'invited'
-       AND auth_subject = 'pending-auth:' || id`
-  ).bind(authUserId, invitation.membership_id, invitation.restaurant_id).run();
+       AND auth_subject = 'pending-auth:' || id
+       AND EXISTS (
+         SELECT 1 FROM auth_invitation_tokens t
+         WHERE t.id = ? AND t.membership_id = memberships.id
+           AND t.consumed_at IS NOT NULL AND t.revoked_at IS NULL
+       )`
+  ).bind(
+    authUserId,
+    invitation.membership_id,
+    invitation.restaurant_id,
+    invitation.id
+  ).run();
+  return Number(result.meta?.changes ?? 0) === 1;
+}
+
+export async function activateInvitationMembership(
+  env: InvitationEnv,
+  invitation: InvitationRecord,
+  authUserId: string
+): Promise<boolean> {
+  if (!authUserId || !invitation.id) return false;
+  const result = await env.DB.prepare(
+    `UPDATE memberships
+     SET status = 'active'
+     WHERE id = ? AND restaurant_id = ? AND status = 'invited'
+       AND auth_subject = ?
+       AND EXISTS (
+         SELECT 1 FROM auth_invitation_tokens t
+         WHERE t.id = ? AND t.membership_id = memberships.id
+           AND t.consumed_at IS NOT NULL AND t.revoked_at IS NULL
+       )`
+  ).bind(
+    invitation.membership_id,
+    invitation.restaurant_id,
+    authUserId,
+    invitation.id
+  ).run();
   return Number(result.meta?.changes ?? 0) === 1;
 }
 
