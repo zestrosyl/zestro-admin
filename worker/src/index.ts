@@ -551,15 +551,6 @@ async function route(
   const member = auth.member;
   const rid = member.restaurant_id;
 
-  if (auth.kind === 'unauthenticated') {
-    return fail(auth.message, 401);
-  }
-  if (auth.kind === 'forbidden') {
-    return fail(auth.message, 403);
-  }
-  const member = auth.member;
-  const rid = member.restaurant_id;
-
   // ── Identity & Session ──────────────────────────────────────────────────
   if (path === '/api/me' && req.method === 'GET') {
     return json({
