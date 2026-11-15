@@ -72,3 +72,41 @@ jobs:
       - name: Run Worker tests
         working-directory: worker
         run: npm test
+
+  auth-staging-integration:
+    name: Auth flow integration (isolated staging D1 only)
+    if: github.event_name == 'workflow_dispatch' && vars.AUTH_STAGING_D1_ID != ''
+    runs-on: ubuntu-latest
+    environment: auth-staging
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: worker/package-lock.json
+      - name: Install Worker dependencies
+        working-directory: worker
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Validate isolated staging identity
+        env:
+          AUTH_STAGING_D1_ID: ${{ vars.AUTH_STAGING_D1_ID }}
+          AUTH_STAGING_D1_NAME: ${{ vars.AUTH_STAGING_D1_NAME }}
+          BETTER_AUTH_SECRET: ${{ secrets.STAGING_BETTER_AUTH_SECRET }}
+          BETTER_AUTH_URL: ${{ vars.STAGING_BETTER_AUTH_URL }}
+          ADMIN_APP_URL: ${{ vars.STAGING_ADMIN_APP_URL }}
+        run: |
+          test "$AUTH_STAGING_D1_ID" = "db949199-24f0-4c8c-8694-c06f59168d62"
+          test "$AUTH_STAGING_D1_NAME" = "zestro-auth-staging-20261115"
+          test -n "$BETTER_AUTH_SECRET"
+          test -n "$BETTER_AUTH_URL"
+          test -n "$ADMIN_APP_URL"
+      - name: Run Better Auth D1 integration suite
+        working-directory: worker
+        env:
+          BETTER_AUTH_SECRET: ${{ secrets.STAGING_BETTER_AUTH_SECRET }}
+          BETTER_AUTH_URL: ${{ vars.STAGING_BETTER_AUTH_URL }}
+          ADMIN_APP_URL: ${{ vars.STAGING_ADMIN_APP_URL }}
+        run: npm run test:auth-integration
