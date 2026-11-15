@@ -1,8 +1,8 @@
 import type { AuthEnv } from './auth-schema';
 
 interface EmailEnv extends AuthEnv {
-  RESEND_API_KEY: string;
-  RESEND_FROM_EMAIL: string;
+  RESEND_API_KEY?: string;
+  RESEND_FROM_EMAIL?: string;
 }
 
 function escapeHtml(value: string): string {
