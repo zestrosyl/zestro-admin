@@ -9,7 +9,8 @@ export const StaffModule: React.FC<{
   canManageStaff?: boolean;
   onSaveStaff: (member: StaffMember, isNew: boolean) => Promise<boolean> | void;
   onDeleteStaff: (id: string) => void;
-}> = ({ staff, currentUserEmail = '', canManageStaff = true, onSaveStaff, onDeleteStaff }) => {
+  onReinviteStaff: (id: string) => Promise<boolean> | boolean;
+}> = ({ staff, currentUserEmail = '', canManageStaff = true, onSaveStaff, onDeleteStaff, onReinviteStaff }) => {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<StaffMember | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<StaffMember | null>(null);
@@ -76,7 +77,7 @@ export const StaffModule: React.FC<{
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-neutral-500">
-          Manage Cloudflare Access team memberships, shift schedules, and role-based dashboard permissions.
+          Invite team members by email, manage shift schedules, and assign role-based dashboard permissions.
         </p>
         {canManageStaff && (
           <button
@@ -148,6 +149,7 @@ export const StaffModule: React.FC<{
                     {canManageStaff && (
                       <td className="px-5 py-4 text-right">
                         <div className="inline-flex gap-1.5">
+                          {m.membershipStatus === 'invited' && <button type="button" onClick={() => { void onReinviteStaff(m.id); }} className="rounded-lg border border-[#E5E7EB] bg-[#F5F5F5] px-2.5 py-2 text-xs font-medium text-[#15803D]" title={`Resend invitation to ${m.email}`}>Resend invite</button>}
                           <button
                             type="button"
                             onClick={() => openEdit(m)}
@@ -180,7 +182,7 @@ export const StaffModule: React.FC<{
         open={modalOpen}
         onClose={() => setModalOpen(false)}
         title={editing ? 'Edit Staff Member' : 'Invite Staff Member'}
-        subtitle="Authorizes the team member's email in D1 memberships for Cloudflare Access login"
+        subtitle={editing ? 'Update role and staff details.' : 'An email invitation will be sent. Access starts only after the invite is accepted and a password is created.'}
       >
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
@@ -223,7 +225,7 @@ export const StaffModule: React.FC<{
                 onChange={(e) => setForm({ ...form, role: e.target.value as StaffRole })}
                 className="w-full rounded-xl border border-[#E5E7EB] bg-[#F5F5F5] px-3.5 py-2.5 text-sm text-[#111111]"
               >
-                <option value="Owner">Owner</option>
+                <option value="Owner" disabled>Owner (verified migration only)</option>
                 <option value="Manager">Manager</option>
                 <option value="Head Chef">Head Chef</option>
                 <option value="Server">Server</option>
