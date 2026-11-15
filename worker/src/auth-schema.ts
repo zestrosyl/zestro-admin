@@ -13,15 +13,16 @@ const AUTH_PATHS = new Set([
   '/api/auth/sign-in/email',
   '/api/auth/sign-out',
   '/api/auth/get-session',
-  '/api/auth/forget-password',
+  '/api/auth/request-password-reset',
   '/api/auth/reset-password',
 ]);
 
 export function createAuth(env: AuthEnv) {
   const baseURL = new URL(env.BETTER_AUTH_URL);
-  const adminOrigin = new URL(env.ADMIN_APP_URL).origin;
+  const adminURL = new URL(env.ADMIN_APP_URL);
+  const adminOrigin = adminURL.origin;
   if (baseURL.protocol !== 'https:' ||
-      adminOrigin !== baseURL.origin ||
+      adminURL.protocol !== 'https:' ||
       !env.BETTER_AUTH_SECRET ||
       env.BETTER_AUTH_SECRET.length < 32) {
     throw new Error('Better Auth requires a matching HTTPS app/API URL and a strong secret.');
