@@ -12,7 +12,7 @@ ALTER TABLE promotions ADD COLUMN description TEXT NOT NULL DEFAULT '';
 ALTER TABLE promotions ADD COLUMN usage_count INTEGER NOT NULL DEFAULT 0;
 
 ALTER TABLE memberships ADD COLUMN phone TEXT NOT NULL DEFAULT '';
-ALTER TABLE memberships ADD COLUMN shift TEXT NOT NULL DEFAULT '';
+ALTER TABLE memberships ADD COLUMN shift TEXT NOT NULL DEFAULT 'Flexible Shift';
 ALTER TABLE memberships ADD COLUMN job_title TEXT NOT NULL DEFAULT '';
 ALTER TABLE memberships ADD COLUMN duty_status TEXT NOT NULL DEFAULT 'Active' CHECK (duty_status IN ('Active', 'On Shift', 'Off Duty'));
 
