@@ -970,6 +970,10 @@ export function App() {
                       return false;
                     }
                   }}
+                  onReinviteStaff={async (id) => {
+                    try { await adminApi('/api/staff/reinvite', 'POST', { membershipId: id }); notify('Invitation email resent'); return true; }
+                    catch (error) { notify(error instanceof Error ? error.message : 'Invitation retry failed', 'warning'); return false; }
+                  }}
                   onDeleteStaff={(id) => {
                     void adminApi(`/api/staff/${id}`, 'DELETE')
                       .then(() => {
