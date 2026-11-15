@@ -98,14 +98,14 @@ export const TablesModule: React.FC<{
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-[#F3EBDD]/70">
+        <p className="text-sm text-neutral-500">
           Manage dining zones, live table occupancy, and scannable customer QR codes.
         </p>
         {canManage && (
           <button
             type="button"
             onClick={openNew}
-            className="flex items-center gap-2 rounded-xl bg-[#D7A65A] px-4 py-2.5 text-sm font-semibold text-[#101B17] hover:bg-[#e3b772]"
+            className="flex items-center gap-2 rounded-xl bg-[#16A34A] px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700"
           >
             <Plus className="h-4 w-4" /> Add Table
           </button>
@@ -113,9 +113,9 @@ export const TablesModule: React.FC<{
       </div>
 
       {tables.length === 0 ? (
-        <div className="rounded-2xl border border-[#2C3D34] bg-[#1D2922] p-10 text-center">
-          <p className="font-serif text-lg font-semibold text-[#F3EBDD]">No dining tables configured</p>
-          <p className="mt-1 text-xs text-[#F3EBDD]/60">
+        <div className="rounded-2xl border border-[#E5E7EB] bg-white p-10 text-center">
+          <p className="text-lg font-semibold text-[#111111]">No dining tables configured</p>
+          <p className="mt-1 text-xs text-neutral-500">
             Add your restaurant tables to enable QR self-ordering and waiter call buttons at each table.
           </p>
         </div>
@@ -124,24 +124,24 @@ export const TablesModule: React.FC<{
           {tables.map((tbl) => (
             <div
               key={tbl.id}
-              className="rounded-2xl border border-[#2C3D34] bg-[#1D2922] p-5 transition hover:border-[#D7A65A]/45"
+              className="rounded-2xl border border-[#E5E7EB] bg-white p-5 transition hover:border-[#16A34A]/40"
             >
               <div className="flex items-start justify-between">
                 <div>
-                  <p className="text-[11px] font-medium uppercase tracking-wider text-[#D7A65A]">
+                  <p className="text-[11px] font-medium uppercase tracking-wider text-[#16A34A]">
                     {tbl.zone}
                   </p>
-                  <h3 className="mt-0.5 font-serif text-2xl font-bold text-[#F3EBDD]">{tbl.number}</h3>
+                  <h3 className="mt-0.5 text-2xl font-bold text-[#111111]">{tbl.number}</h3>
                 </div>
                 <Badge variant={statusVariant(tbl.status)}>{tbl.status}</Badge>
               </div>
 
-              <div className="mt-4 flex items-center justify-between text-xs text-[#F3EBDD]/70">
+              <div className="mt-4 flex items-center justify-between text-xs text-neutral-500">
                 <span className="flex items-center gap-1.5">
-                  <Users className="h-3.5 w-3.5 text-[#D7A65A]" /> {tbl.capacity} Seats
+                  <Users className="h-3.5 w-3.5 text-[#16A34A]" /> {tbl.capacity} Seats
                 </span>
                 {tbl.activeOrderNumber && (
-                  <span className="font-mono text-[#D7A65A]">{tbl.activeOrderNumber}</span>
+                  <span className="font-mono text-[#16A34A]">{tbl.activeOrderNumber}</span>
                 )}
               </div>
 
@@ -152,7 +152,7 @@ export const TablesModule: React.FC<{
                   onChange={(e) =>
                     void onSaveTable({ ...tbl, status: e.target.value as TableStatus }, false)
                   }
-                  className="w-full rounded-xl border border-[#2C3D34] bg-[#101B17] px-3 py-2 text-xs text-[#F3EBDD]"
+                  className="w-full rounded-xl border border-[#E5E7EB] bg-[#F5F5F5] px-3 py-2 text-xs text-[#111111]"
                 >
                   <option value="Available">Available</option>
                   <option value="Occupied">Occupied</option>
@@ -161,13 +161,13 @@ export const TablesModule: React.FC<{
                 </select>
               </div>
 
-              <div className="mt-4 flex items-center justify-between border-t border-[#2C3D34] pt-3">
+              <div className="mt-4 flex items-center justify-between border-t border-[#E5E7EB] pt-3">
                 <button
                   type="button"
                   onClick={() =>
                     setQrTable({ ...tbl, qrPath: buildMenuUrl(tbl.number) || tbl.qrUrl || '' })
                   }
-                  className="flex items-center gap-1.5 text-xs font-medium text-[#D7A65A] hover:underline"
+                  className="flex items-center gap-1.5 text-xs font-medium text-[#16A34A] hover:underline"
                 >
                   <QrCode className="h-3.5 w-3.5" /> View QR
                 </button>
@@ -176,7 +176,7 @@ export const TablesModule: React.FC<{
                     <button
                       type="button"
                       onClick={() => openEdit(tbl)}
-                      className="rounded-lg border border-[#2C3D34] bg-[#101B17] p-1.5 text-[#F3EBDD]/80 hover:text-[#D7A65A]"
+                      className="rounded-lg border border-[#E5E7EB] bg-[#F5F5F5] p-1.5 text-neutral-500 hover:text-[#16A34A]"
                       aria-label={`Edit ${tbl.number}`}
                     >
                       <Pencil className="h-3.5 w-3.5" />
@@ -184,7 +184,7 @@ export const TablesModule: React.FC<{
                     <button
                       type="button"
                       onClick={() => setDeleteTarget(tbl)}
-                      className="rounded-lg border border-[#2C3D34] bg-[#101B17] p-1.5 text-rose-300/80 hover:text-rose-300"
+                      className="rounded-lg border border-[#E5E7EB] bg-[#F5F5F5] p-1.5 text-rose-600 hover:text-rose-600"
                       aria-label={`Delete ${tbl.number}`}
                     >
                       <Trash2 className="h-3.5 w-3.5" />
@@ -211,7 +211,7 @@ export const TablesModule: React.FC<{
                 <div id="zestro-table-qr">
                   <QrCodeSvg value={qrTable.qrPath} size={180} />
                 </div>
-                <p className="max-w-full break-all font-mono text-xs text-[#D7A65A]">{qrTable.qrPath}</p>
+                <p className="max-w-full break-all font-mono text-xs text-[#16A34A]">{qrTable.qrPath}</p>
               </>
             ) : (
               <div className="rounded-2xl border border-amber-400/25 bg-amber-400/10 p-4 text-sm text-amber-100">
@@ -226,7 +226,7 @@ export const TablesModule: React.FC<{
                     navigator.clipboard?.writeText(qrTable.qrPath).catch(() => {});
                     onNotify(`Copied QR link for ${qrTable.number}`, 'info');
                   }}
-                  className="flex items-center justify-center gap-2 rounded-xl border border-[#2C3D34] bg-[#101B17] px-3 py-2.5 text-xs font-semibold text-[#F3EBDD]"
+                  className="flex items-center justify-center gap-2 rounded-xl border border-[#E5E7EB] bg-[#F5F5F5] px-3 py-2.5 text-xs font-semibold text-[#111111]"
                 >
                   <Copy className="h-3.5 w-3.5" /> Copy Link
                 </button>
@@ -245,7 +245,7 @@ export const TablesModule: React.FC<{
                     URL.revokeObjectURL(url);
                     onNotify(`Downloaded QR code for ${qrTable.number}`, 'info');
                   }}
-                  className="flex items-center justify-center gap-2 rounded-xl bg-[#D7A65A] px-3 py-2.5 text-xs font-semibold text-[#101B17]"
+                  className="flex items-center justify-center gap-2 rounded-xl bg-[#16A34A] px-3 py-2.5 text-xs font-semibold text-white"
                 >
                   <Download className="h-3.5 w-3.5" /> Download SVG
                 </button>
@@ -263,33 +263,33 @@ export const TablesModule: React.FC<{
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="mb-1.5 block text-xs font-medium text-[#F3EBDD]/75">Table Number</label>
+              <label className="mb-1.5 block text-xs font-medium text-neutral-500">Table Number</label>
               <input
                 type="text"
                 required
                 value={form.number}
                 onChange={(e) => setForm({ ...form, number: e.target.value })}
-                className="w-full rounded-xl border border-[#2C3D34] bg-[#101B17] px-3.5 py-2.5 text-sm text-[#F3EBDD]"
+                className="w-full rounded-xl border border-[#E5E7EB] bg-[#F5F5F5] px-3.5 py-2.5 text-sm text-[#111111]"
               />
             </div>
             <div>
-              <label className="mb-1.5 block text-xs font-medium text-[#F3EBDD]/75">Capacity</label>
+              <label className="mb-1.5 block text-xs font-medium text-neutral-500">Capacity</label>
               <input
                 type="number"
                 min={1}
                 max={24}
                 value={form.capacity}
                 onChange={(e) => setForm({ ...form, capacity: Number(e.target.value) })}
-                className="w-full rounded-xl border border-[#2C3D34] bg-[#101B17] px-3.5 py-2.5 text-sm text-[#F3EBDD]"
+                className="w-full rounded-xl border border-[#E5E7EB] bg-[#F5F5F5] px-3.5 py-2.5 text-sm text-[#111111]"
               />
             </div>
           </div>
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-[#F3EBDD]/75">Zone</label>
+            <label className="mb-1.5 block text-xs font-medium text-neutral-500">Zone</label>
             <select
               value={form.zone}
               onChange={(e) => setForm({ ...form, zone: e.target.value as RestaurantTable['zone'] })}
-              className="w-full rounded-xl border border-[#2C3D34] bg-[#101B17] px-3.5 py-2.5 text-sm text-[#F3EBDD]"
+              className="w-full rounded-xl border border-[#E5E7EB] bg-[#F5F5F5] px-3.5 py-2.5 text-sm text-[#111111]"
             >
               <option value="Main Dining">Main Dining</option>
               <option value="Terrace">Terrace</option>
@@ -301,14 +301,14 @@ export const TablesModule: React.FC<{
             <button
               type="button"
               onClick={() => setEditModal(false)}
-              className="rounded-xl border border-[#2C3D34] bg-[#101B17] px-4 py-2 text-sm"
+              className="rounded-xl border border-[#E5E7EB] bg-[#F5F5F5] px-4 py-2 text-sm"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={saving}
-              className="rounded-xl bg-[#D7A65A] px-5 py-2 text-sm font-semibold text-[#101B17] disabled:opacity-50"
+              className="rounded-xl bg-[#16A34A] px-5 py-2 text-sm font-semibold text-white disabled:opacity-50"
             >
               {saving ? 'Saving...' : 'Save Table'}
             </button>

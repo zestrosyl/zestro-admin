@@ -120,14 +120,14 @@ export const GalleryModule: React.FC<{
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-[#F3EBDD]/70">
+        <p className="text-sm text-neutral-500">
           Curate and arrange restaurant photography shown in the live customer website gallery.
         </p>
         {canManage && (
           <button
             type="button"
             onClick={openNew}
-            className="flex items-center gap-2 rounded-xl bg-[#D7A65A] px-4 py-2.5 text-sm font-semibold text-[#101B17] hover:bg-[#e3b772]"
+            className="flex items-center gap-2 rounded-xl bg-[#16A34A] px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700"
           >
             <Plus className="h-4 w-4" /> Add Gallery Photo
           </button>
@@ -135,9 +135,9 @@ export const GalleryModule: React.FC<{
       </div>
 
       {sorted.length === 0 ? (
-        <div className="rounded-2xl border border-[#2C3D34] bg-[#1D2922] p-10 text-center">
-          <p className="font-serif text-lg font-semibold text-[#F3EBDD]">No gallery photos published yet</p>
-          <p className="mt-1 text-xs text-[#F3EBDD]/60">
+        <div className="rounded-2xl border border-[#E5E7EB] bg-white p-10 text-center">
+          <p className="text-lg font-semibold text-[#111111]">No gallery photos published yet</p>
+          <p className="mt-1 text-xs text-neutral-500">
             Upload dining room, culinary, and lounge photography to feature on your public website.
           </p>
         </div>
@@ -146,13 +146,13 @@ export const GalleryModule: React.FC<{
           {sorted.map((photo, idx) => (
             <div
               key={photo.id}
-              className="overflow-hidden rounded-2xl border border-[#2C3D34] bg-[#1D2922] transition hover:border-[#D7A65A]/45"
+              className="overflow-hidden rounded-2xl border border-[#E5E7EB] bg-white transition hover:border-[#16A34A]/40"
             >
-              <div className="relative h-52 bg-[#101B17]">
+              <div className="relative h-52 bg-[#F5F5F5]">
                 {photo.imageUrl ? (
                   <img src={photo.imageUrl} alt={photo.title} className="h-full w-full object-cover" />
                 ) : (
-                  <div className="flex h-full w-full items-center justify-center text-[#F3EBDD]/30">
+                  <div className="flex h-full w-full items-center justify-center text-neutral-500">
                     <ImageOff className="h-8 w-8" />
                   </div>
                 )}
@@ -165,7 +165,7 @@ export const GalleryModule: React.FC<{
                     type="button"
                     onClick={() => void onSavePhoto({ ...photo, featured: !photo.featured }, false)}
                     className={`absolute right-3 top-3 rounded-lg p-1.5 backdrop-blur-sm ${
-                      photo.featured ? 'bg-[#D7A65A] text-[#101B17]' : 'bg-black/50 text-[#F3EBDD]/70'
+                      photo.featured ? 'bg-[#111111] text-white' : 'bg-black/50 text-neutral-500'
                     }`}
                     title="Toggle featured"
                   >
@@ -174,16 +174,16 @@ export const GalleryModule: React.FC<{
                 )}
               </div>
               <div className="p-4">
-                <h3 className="font-serif text-base font-semibold text-[#F3EBDD]">{photo.title}</h3>
-                <p className="mt-1 line-clamp-2 text-xs text-[#F3EBDD]/65">{photo.caption}</p>
+                <h3 className="text-base font-semibold text-[#111111]">{photo.title}</h3>
+                <p className="mt-1 line-clamp-2 text-xs text-neutral-500">{photo.caption}</p>
                 {canManage && (
-                  <div className="mt-4 flex items-center justify-between border-t border-[#2C3D34] pt-3">
+                  <div className="mt-4 flex items-center justify-between border-t border-[#E5E7EB] pt-3">
                     <div className="flex gap-1.5">
                       <button
                         type="button"
                         disabled={idx === 0}
                         onClick={() => onMovePhoto(photo.id, 'prev')}
-                        className="rounded-lg border border-[#2C3D34] bg-[#101B17] p-1.5 text-[#F3EBDD]/75 disabled:opacity-30"
+                        className="rounded-lg border border-[#E5E7EB] bg-[#F5F5F5] p-1.5 text-neutral-500 disabled:opacity-30"
                         title="Move earlier"
                       >
                         <ArrowLeft className="h-3.5 w-3.5" />
@@ -192,7 +192,7 @@ export const GalleryModule: React.FC<{
                         type="button"
                         disabled={idx === sorted.length - 1}
                         onClick={() => onMovePhoto(photo.id, 'next')}
-                        className="rounded-lg border border-[#2C3D34] bg-[#101B17] p-1.5 text-[#F3EBDD]/75 disabled:opacity-30"
+                        className="rounded-lg border border-[#E5E7EB] bg-[#F5F5F5] p-1.5 text-neutral-500 disabled:opacity-30"
                         title="Move later"
                       >
                         <ArrowRight className="h-3.5 w-3.5" />
@@ -202,14 +202,14 @@ export const GalleryModule: React.FC<{
                       <button
                         type="button"
                         onClick={() => openEdit(photo)}
-                        className="rounded-lg border border-[#2C3D34] bg-[#101B17] p-1.5 text-[#F3EBDD]/80 hover:text-[#D7A65A]"
+                        className="rounded-lg border border-[#E5E7EB] bg-[#F5F5F5] p-1.5 text-neutral-500 hover:text-[#16A34A]"
                       >
                         <Pencil className="h-3.5 w-3.5" />
                       </button>
                       <button
                         type="button"
                         onClick={() => setDeleteTarget(photo)}
-                        className="rounded-lg border border-[#2C3D34] bg-[#101B17] p-1.5 text-rose-300/80 hover:text-rose-300"
+                        className="rounded-lg border border-[#E5E7EB] bg-[#F5F5F5] p-1.5 text-rose-600 hover:text-rose-600"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
@@ -229,24 +229,24 @@ export const GalleryModule: React.FC<{
       >
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-[#F3EBDD]/75">Photo Title</label>
+            <label className="mb-1.5 block text-xs font-medium text-neutral-500">Photo Title</label>
             <input
               type="text"
               required
               value={form.title}
               onChange={(e) => setForm({ ...form, title: e.target.value })}
-              className="w-full rounded-xl border border-[#2C3D34] bg-[#101B17] px-3.5 py-2.5 text-sm text-[#F3EBDD]"
+              className="w-full rounded-xl border border-[#E5E7EB] bg-[#F5F5F5] px-3.5 py-2.5 text-sm text-[#111111]"
               placeholder="e.g. Chef Counter Evening Service"
             />
           </div>
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-[#F3EBDD]/75">Category</label>
+            <label className="mb-1.5 block text-xs font-medium text-neutral-500">Category</label>
             <select
               value={form.category}
               onChange={(e) =>
                 setForm({ ...form, category: e.target.value as GalleryPhoto['category'] })
               }
-              className="w-full rounded-xl border border-[#2C3D34] bg-[#101B17] px-3.5 py-2.5 text-sm text-[#F3EBDD]"
+              className="w-full rounded-xl border border-[#E5E7EB] bg-[#F5F5F5] px-3.5 py-2.5 text-sm text-[#111111]"
             >
               <option value="Dining Room">Dining Room</option>
               <option value="Culinary">Culinary</option>
@@ -255,25 +255,25 @@ export const GalleryModule: React.FC<{
             </select>
           </div>
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-[#F3EBDD]/75">Caption</label>
+            <label className="mb-1.5 block text-xs font-medium text-neutral-500">Caption</label>
             <textarea
               rows={2}
               value={form.caption}
               onChange={(e) => setForm({ ...form, caption: e.target.value })}
-              className="w-full rounded-xl border border-[#2C3D34] bg-[#101B17] px-3.5 py-2.5 text-sm text-[#F3EBDD]"
+              className="w-full rounded-xl border border-[#E5E7EB] bg-[#F5F5F5] px-3.5 py-2.5 text-sm text-[#111111]"
             />
           </div>
-          <div className="space-y-2 rounded-xl border border-[#2C3D34] bg-[#101B17] p-3">
+          <div className="space-y-2 rounded-xl border border-[#E5E7EB] bg-[#F5F5F5] p-3">
             <div className="flex items-center gap-4">
               {form.imageUrl ? (
                 <img src={form.imageUrl} alt="Preview" className="h-16 w-20 rounded-lg object-cover" />
               ) : (
-                <div className="flex h-16 w-20 items-center justify-center rounded-lg border border-[#2C3D34] bg-[#1D2922] text-[#F3EBDD]/35">
+                <div className="flex h-16 w-20 items-center justify-center rounded-lg border border-[#E5E7EB] bg-white text-neutral-500">
                   <ImageOff className="h-5 w-5" />
                 </div>
               )}
               <div className="flex-1 space-y-2">
-                <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-[#D7A65A]/45 bg-[#1D2922] px-3.5 py-2 text-xs font-medium text-[#D7A65A]">
+                <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-[#16A34A]/40 bg-white px-3.5 py-2 text-xs font-medium text-[#16A34A]">
                   {uploading ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   ) : (
@@ -295,7 +295,7 @@ export const GalleryModule: React.FC<{
                       const found = mediaAssets.find((m) => m.r2Key === e.target.value);
                       if (found) setForm({ ...form, imageKey: found.r2Key, imageUrl: found.url });
                     }}
-                    className="block w-full rounded-xl border border-[#2C3D34] bg-[#1D2922] px-3 py-2 text-xs text-[#F3EBDD]"
+                    className="block w-full rounded-xl border border-[#E5E7EB] bg-white px-3 py-2 text-xs text-[#111111]"
                   >
                     <option value="">Choose from R2 Image Library...</option>
                     {mediaAssets.map((m) => (
@@ -308,12 +308,12 @@ export const GalleryModule: React.FC<{
               </div>
             </div>
           </div>
-          <label className="flex items-center gap-2 text-sm text-[#F3EBDD]">
+          <label className="flex items-center gap-2 text-sm text-[#111111]">
             <input
               type="checkbox"
               checked={form.featured}
               onChange={(e) => setForm({ ...form, featured: e.target.checked })}
-              className="h-4 w-4 accent-[#D7A65A]"
+              className="h-4 w-4 accent-[#16A34A]"
             />
             Featured highlight photo
           </label>
@@ -321,14 +321,14 @@ export const GalleryModule: React.FC<{
             <button
               type="button"
               onClick={() => setModalOpen(false)}
-              className="rounded-xl border border-[#2C3D34] bg-[#101B17] px-4 py-2 text-sm"
+              className="rounded-xl border border-[#E5E7EB] bg-[#F5F5F5] px-4 py-2 text-sm"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={saving || uploading}
-              className="rounded-xl bg-[#D7A65A] px-5 py-2 text-sm font-semibold text-[#101B17] disabled:opacity-50"
+              className="rounded-xl bg-[#16A34A] px-5 py-2 text-sm font-semibold text-white disabled:opacity-50"
             >
               {saving ? 'Saving...' : editing ? 'Save Changes' : 'Add to Gallery'}
             </button>
