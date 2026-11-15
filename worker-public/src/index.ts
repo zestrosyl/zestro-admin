@@ -215,6 +215,53 @@ async function handle(req: Request, env: Env): Promise<Response> {
   }
   const rid = restaurant.id;
 
+  // Customer account endpoints are scoped to the restaurant resolved above.
+  if (p === '/api/customer/auth/signup' && req.method === 'POST') {
+    const body=await req.json<Record<string,unknown>>();
+    const name=String(body.name||'').trim().slice(0,120), email=customerEmail(String(body.email||'')), password=String(body.password||'');
+    const phone=String(body.phone||'').trim().slice(0,24), address=String(body.defaultAddress||'').trim().slice(0,400);
+    if(!name||!email||password.length<12||password.length>128)return json(err('Enter your name, a valid email, and a password of 12–128 characters.'),400,origin,env);
+    const salt=crypto.getRandomValues(new Uint8Array(16)), passwordHash=await deriveCustomerPassword(password,salt), customerId=uid();
+    const token=toB64Url(crypto.getRandomValues(new Uint8Array(32))), expires=new Date(Date.now()+SESSION_DAYS*86400000), tokenHash=await sha256Customer(token);
+    try {
+      await env.DB.batch([
+        env.DB.prepare('INSERT INTO customers(id,restaurant_id,email,name,phone,default_address,password_hash,password_salt) VALUES(?,?,?,?,?,?,?,?)').bind(customerId,rid,email,name,phone||null,address||null,passwordHash,toB64Url(salt)),
+        env.DB.prepare('INSERT INTO customer_sessions(id,restaurant_id,customer_id,token_hash,expires_at) VALUES(?,?,?,?,?)').bind(uid(),rid,customerId,tokenHash,expires.toISOString())
+      ]);
+    } catch { return json(err('Unable to create account. This email may already be registered.'),409,origin,env); }
+    const response=json({customer:{uid:customerId,email,displayName:name,phone,defaultAddress:address}},201,origin,env);
+    const headers=new Headers(response.headers);headers.set('set-cookie',customerSessionCookie(token,expires));headers.set('access-control-allow-credentials','true');
+    return new Response(response.body,{status:201,headers});
+  }
+  if (p === '/api/customer/auth/login' && req.method === 'POST') {
+    const body=await req.json<Record<string,unknown>>(), email=customerEmail(String(body.email||'')), password=String(body.password||'');
+    if(!email||!password||password.length>128)return json(err('Invalid email or password.'),400,origin,env);
+    const customer=await env.DB.prepare('SELECT id,restaurant_id,email,name,phone,default_address,password_hash,password_salt FROM customers WHERE restaurant_id=? AND email=? LIMIT 1').bind(rid,email).first<CustomerRow>();
+    if(!customer)return json(err('Invalid email or password.'),401,origin,env);
+    const actual=new TextEncoder().encode(await deriveCustomerPassword(password,fromB64Url(customer.password_salt))), expected=new TextEncoder().encode(customer.password_hash);
+    let diff=actual.length^expected.length;for(let i=0;i<Math.min(actual.length,expected.length);i++)diff|=actual[i]^expected[i];
+    if(diff!==0)return json(err('Invalid email or password.'),401,origin,env);
+    const session=await createCustomerSession(env.DB,rid,customer.id), response=json({customer:customerPublic(customer)},200,origin,env), headers=new Headers(response.headers);
+    headers.set('set-cookie',customerSessionCookie(session.token,session.expires));headers.set('access-control-allow-credentials','true');return new Response(response.body,{status:200,headers});
+  }
+  if (p === '/api/customer/auth/logout' && req.method === 'POST') {
+    const token=customerTokenFromCookie(req);if(token)await env.DB.prepare('DELETE FROM customer_sessions WHERE restaurant_id=? AND token_hash=?').bind(rid,await sha256Customer(token)).run();
+    const response=json({ok:true},200,origin,env), headers=new Headers(response.headers);
+    headers.set('set-cookie',CUSTOMER_COOKIE+'=; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=0');headers.set('access-control-allow-credentials','true');return new Response(response.body,{status:200,headers});
+  }
+  if (p === '/api/customer/me' && req.method === 'GET') {
+    const customer=await getCustomerFromSession(req,env.DB,rid);if(!customer)return json(err('Not signed in.'),401,origin,env);
+    const orders=await env.DB.prepare('SELECT id,order_number,order_type,status,total_minor,created_at FROM orders WHERE restaurant_id=? AND customer_id=? ORDER BY created_at DESC LIMIT 50').bind(rid,customer.id).all<Record<string,unknown>>();
+    return json({customer:customerPublic(customer),orders:orders.results||[]},200,origin,env);
+  }
+  if (p === '/api/customer/profile' && req.method === 'PATCH') {
+    const customer=await getCustomerFromSession(req,env.DB,rid);if(!customer)return json(err('Not signed in.'),401,origin,env);
+    const body=await req.json<Record<string,unknown>>(), name=String(body.displayName||'').trim().slice(0,120), phone=String(body.phone||'').trim().slice(0,24), address=String(body.defaultAddress||'').trim().slice(0,400);
+    if(!name)return json(err('Name is required.'),400,origin,env);
+    await env.DB.prepare('UPDATE customers SET name=?,phone=?,default_address=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND restaurant_id=?').bind(name,phone||null,address||null,customer.id,rid).run();
+    const updated=await env.DB.prepare('SELECT id,restaurant_id,email,name,phone,default_address,password_hash,password_salt FROM customers WHERE id=? AND restaurant_id=?').bind(customer.id,rid).first<CustomerRow>();
+    return json({customer:updated?customerPublic(updated):customerPublic(customer)},200,origin,env);
+  }
   // ── Public R2 Media Stream (`GET /api/media?key=...`) ───────────────────
   if (p === '/api/media' && req.method === 'GET') {
     const key = url.searchParams.get('key') || '';
@@ -754,8 +801,9 @@ async function handle(req: Request, env: Env): Promise<Response> {
       }
     }
 
-    const name = String(b.customerName || '').trim();
-    const phone = String(b.customerPhone || '').trim();
+    const signedInCustomer = await getCustomerFromSession(req, env.DB, rid);
+    const name = String(b.customerName || signedInCustomer?.name || '').trim();
+    const phone = String(b.customerPhone || signedInCustomer?.phone || '').trim();
     const deliveryAddress = String(b.deliveryAddress || '').trim();
     if (!name || !phone) {
       return json(err('Customer name and phone number are required'), 400, origin, env);
@@ -1034,8 +1082,8 @@ async function handle(req: Request, env: Env): Promise<Response> {
            id, restaurant_id, order_number, table_id, customer_name, customer_phone,
            delivery_address, order_type, status, subtotal_minor, discount_minor,
            tax_minor, service_charge_minor, delivery_fee_minor, total_minor,
-           promo_code, customer_note, idempotency_key
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+           promo_code, customer_note, idempotency_key, customer_id
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).bind(
         orderId,
         rid,
@@ -1053,7 +1101,8 @@ async function handle(req: Request, env: Env): Promise<Response> {
         totalMinor,
         appliedPromoCode,
         customerNote,
-        finalIdempotencyKey
+        finalIdempotencyKey,
+        signedInCustomer?.id || null
       ),
       ...verifiedItems.map((item) =>
         env.DB.prepare(
