@@ -134,3 +134,80 @@ export const AuthPage: React.FC<{ onAuthenticated: () => void }> = ({ onAuthenti
     </main>
   );
 };
+
+
+export const ResetPasswordPage: React.FC = () => {
+  const token = new URLSearchParams(window.location.search).get('token') || '';
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
+  const [error, setError] = useState('');
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!token) { setError('This password reset link is invalid or incomplete.'); return; }
+    if (password.length < 12) { setError('Use at least 12 characters for your new password.'); return; }
+    if (password !== confirmPassword) { setError('The passwords do not match.'); return; }
+    if (busy) return;
+    setBusy(true);
+    setError('');
+    try {
+      await authRequest('/reset-password', { token, newPassword: password });
+      setDone(true);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'The reset link may have expired. Request a new one.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <main className="flex min-h-screen items-center justify-center bg-[#F5F5F5] px-4 py-10 text-[#111111]">
+      <section className="w-full max-w-md rounded-3xl border border-[#E5E7EB] bg-white p-7 shadow-sm sm:p-9">
+        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-50 text-[#16A34A]">
+          <KeyRound className="h-7 w-7" />
+        </div>
+        <p className="mt-5 text-center text-xs font-semibold uppercase tracking-[0.2em] text-[#16A34A]">ZESTRO Admin</p>
+        <h1 className="mt-2 text-center text-2xl font-bold tracking-tight">Create a new password</h1>
+        {done ? (
+          <div className="mt-6 text-center">
+            <p role="status" className="rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+              Your password has been updated. Sign in with your new password.
+            </p>
+            <a href="/" className="mt-5 inline-flex rounded-xl bg-[#16A34A] px-5 py-3 text-sm font-semibold text-white">
+              Return to sign in
+            </a>
+          </div>
+        ) : (
+          <form onSubmit={submit} className="mt-7 space-y-4">
+            {!token && <p role="alert" className="rounded-xl bg-rose-50 px-3.5 py-3 text-sm text-rose-700">This password reset link is invalid or incomplete.</p>}
+            <label className="block">
+              <span className="mb-1.5 block text-xs font-semibold text-neutral-600">New password</span>
+              <input type="password" autoComplete="new-password" required minLength={12} value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                className="w-full rounded-xl border border-[#E5E7EB] bg-white px-3.5 py-3 text-sm outline-none focus:border-[#16A34A] focus:ring-2 focus:ring-emerald-100"
+                placeholder="At least 12 characters" />
+            </label>
+            <label className="block">
+              <span className="mb-1.5 block text-xs font-semibold text-neutral-600">Confirm new password</span>
+              <input type="password" autoComplete="new-password" required minLength={12} value={confirmPassword}
+                onChange={(event) => setConfirmPassword(event.target.value)}
+                className="w-full rounded-xl border border-[#E5E7EB] bg-white px-3.5 py-3 text-sm outline-none focus:border-[#16A34A] focus:ring-2 focus:ring-emerald-100"
+                placeholder="Enter the password again" />
+            </label>
+            {error && <p role="alert" className="rounded-xl bg-rose-50 px-3.5 py-3 text-sm text-rose-700">{error}</p>}
+            <button type="submit" disabled={busy || !token}
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#16A34A] px-4 py-3 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60">
+              {busy && <Loader2 className="h-4 w-4 animate-spin" />}
+              Update password
+            </button>
+          </form>
+        )}
+        <p className="mt-7 border-t border-[#E5E7EB] pt-5 text-center text-xs text-neutral-400">
+          Password reset links can only be used once and expire automatically.
+        </p>
+      </section>
+    </main>
+  );
+};
