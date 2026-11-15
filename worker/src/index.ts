@@ -2135,6 +2135,9 @@ async function route(
     if (!name || !email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return fail('Valid name and email are required');
     }
+    if (String(target.status) === 'invited' && email !== String(target.email).toLowerCase()) {
+      return fail('Pending invitation email cannot be changed. Revoke and create a new invitation instead.', 409);
+    }
 
     if (email !== String(target.email).toLowerCase()) {
       const dup = await env.DB.prepare(
