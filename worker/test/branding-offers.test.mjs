@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, it, before, after } from 'node:test';
 import esbuild from 'esbuild';
 import { Miniflare } from 'miniflare';
-import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from 'jose';
+import { createLocalJWKSet, exportJWK, generateKeyPair, jwtVerify, SignJWT } from 'jose';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const WORKER_ROOT = path.resolve(__dirname, '..');
@@ -133,7 +133,34 @@ describe('ZESTRO Admin Cleanup, Restaurant Branding & Homepage Offers', () => {
       ALLOWED_ORIGINS: 'https://zestro-admin.pages.dev,https://zestro-customer-website.pages.dev',
     };
     const localJwks = createLocalJWKSet({ keys: [jwk] });
-    adminHandler = adminMod.createAdminHandler({ keySetOverride: localJwks });
+    adminHandler = adminMod.createAdminHandler({
+      sessionResolver: async (req, env) => {
+        let subject = '';
+        const token = req.headers.get('Cf-Access-Jwt-Assertion');
+        if (!token) return { kind: 'unauthenticated', message: 'Authentication required' };
+        try {
+          const { payload } = await jwtVerify(token, localJwks, {
+            issuer: TEAM_DOMAIN,
+            audience: ACCESS_AUD,
+          });
+          subject = String(payload.sub || '');
+        } catch {
+          return { kind: 'unauthenticated', message: 'Authentication required' };
+        }
+        const member = await env.DB.prepare(
+          `SELECT m.id, m.restaurant_id, m.auth_subject, m.email, m.display_name, m.role,
+             COALESCE(m.job_title, '') AS job_title, r.name AS restaurant_name,
+             r.slug AS restaurant_slug, r.currency AS restaurant_currency,
+             r.timezone AS restaurant_timezone, r.status AS restaurant_status
+           FROM memberships m JOIN restaurants r ON r.id = m.restaurant_id
+           WHERE m.auth_subject = ? AND m.status = 'active' AND r.status = 'active'
+           LIMIT 1`
+        ).bind(subject).first();
+        return member
+          ? { kind: 'ok', member }
+          : { kind: 'forbidden', message: 'No active restaurant membership is linked to this user' };
+      },
+    });
   });
 
   after(async () => {
