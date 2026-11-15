@@ -11,6 +11,7 @@ import {
   BellRing,
   Tag,
   Users,
+  UserCheck,
   Settings,
   X,
   Sparkles,
@@ -34,6 +35,7 @@ export const NAV_ITEMS: NavItem[] = [
   { id: 'images', label: 'Image Library', group: 'Menu & Media', icon: <ImageIcon className="h-4 w-4" /> },
   { id: 'homepage', label: 'Homepage Editor', group: 'Menu & Media', icon: <Monitor className="h-4 w-4" /> },
   { id: 'gallery', label: 'Gallery', group: 'Menu & Media', icon: <Images className="h-4 w-4" /> },
+  { id: 'customers', label: 'Customers', group: 'Growth & Team', icon: <UserCheck className="h-4 w-4" /> },
   { id: 'promotions', label: 'Promotions', group: 'Growth & Team', icon: <Tag className="h-4 w-4" /> },
   { id: 'staff', label: 'Staff Management', group: 'Growth & Team', icon: <Users className="h-4 w-4" /> },
   { id: 'settings', label: 'Settings', group: 'Growth & Team', icon: <Settings className="h-4 w-4" /> },
@@ -48,7 +50,6 @@ export const Sidebar: React.FC<{
   incomingWaiterCallsCount: number;
   restaurantName: string;
   currentUser?: AuthenticatedAdminUser | null;
-  connected?: boolean;
 }> = ({
   activeModule,
   onSelectModule,
@@ -58,7 +59,6 @@ export const Sidebar: React.FC<{
   incomingWaiterCallsCount,
   restaurantName,
   currentUser,
-  connected = false,
 }) => {
   const groups: Array<'Operations' | 'Menu & Media' | 'Growth & Team'> = [
     'Operations',
@@ -138,23 +138,23 @@ export const Sidebar: React.FC<{
 
       <div className="border-t border-[#2C3D34] p-4">
         <div className="rounded-xl border border-[#2C3D34] bg-[#1D2922] p-3">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold tracking-wide text-[#F3EBDD]">
-              {connected ? 'LIVE CLOUD · D1 + R2' : 'CLOUD DISCONNECTED'}
-            </span>
-            <span
-              className={`h-2 w-2 rounded-full ${
-                connected ? 'bg-emerald-400' : 'bg-amber-400'
-              }`}
-            />
-          </div>
           {currentUser ? (
-            <p className="mt-1 truncate text-[11px] text-[#F3EBDD]/65">
-              {currentUser.name} · <span className="text-[#D7A65A]">{currentUser.uiRole}</span>
-            </p>
+            <div className="flex items-center gap-3">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-[#D7A65A]/30 bg-[#101B17] text-xs font-semibold text-[#D7A65A]">
+                {currentUser.name.trim().charAt(0).toUpperCase() || 'A'}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-xs font-semibold text-[#F3EBDD]">
+                  {currentUser.name}
+                </p>
+                <p className="truncate text-[11px] text-[#D7A65A]">
+                  {currentUser.uiRole}
+                </p>
+              </div>
+            </div>
           ) : (
-            <p className="mt-1 text-[11px] text-[#F3EBDD]/55">
-              Verifying Cloudflare Access session...
+            <p className="text-[11px] text-[#F3EBDD]/55">
+              Verifying account...
             </p>
           )}
         </div>
@@ -168,7 +168,7 @@ export const Sidebar: React.FC<{
       {mobileOpen && (
         <div className="fixed inset-0 z-40 flex lg:hidden">
           <div className="fixed inset-0 bg-black/70 backdrop-blur-sm" onClick={onCloseMobile} />
-          <aside className="relative z-50 w-72 max-w-[85vw] border-r border-[#2C3D34]">
+          <aside className="relative z-50 flex h-full w-72 max-w-[85vw] flex-col border-r border-[#2C3D34]">
             {content}
           </aside>
         </div>
