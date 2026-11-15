@@ -24,7 +24,7 @@ jobs:
           cache: npm
           cache-dependency-path: worker-public/package-lock.json
       - run: npm ci
-      - run: npx tsc --noEmit
+      - run: npx tsc --noEmit -p tsconfig.json
 
   staging-integration:
     if: github.event_name == 'workflow_dispatch'
