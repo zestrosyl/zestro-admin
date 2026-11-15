@@ -17,7 +17,7 @@ const AUTH_PATHS = new Set([
   '/api/auth/reset-password',
 ]);
 
-export function createAuth(env: AuthEnv) {
+export function createAuth(env: AuthEnv, ctx?: ExecutionContext) {
   const baseURL = new URL(env.BETTER_AUTH_URL);
   const adminURL = new URL(env.ADMIN_APP_URL);
   const adminOrigin = adminURL.origin;
@@ -53,7 +53,7 @@ export function createAuth(env: AuthEnv) {
         if (resetUrl.origin !== adminOrigin || resetUrl.protocol !== 'https:') {
           throw new Error('Refusing to send a password reset URL for an untrusted origin.');
         }
-        const response = await fetch('https://api.resend.com/emails', {
+        const send = fetch('https://api.resend.com/emails', {
           method: 'POST',
           headers: {
             authorization: `Bearer ${env.RESEND_API_KEY}`,
@@ -65,40 +65,15 @@ export function createAuth(env: AuthEnv) {
             subject: 'Reset your ZESTRO Admin password',
             text: `A password reset was requested for your ZESTRO Admin account. Complete it here: ${resetUrl.toString()}\\n\\nIf you did not request this, ignore this email.`,
           }),
+        }).then((response) => {
+          if (!response.ok) {
+            throw new Error(`Password reset email delivery failed with status ${response.status}.`);
+          }
         });
-        if (!response.ok) {
-          throw new Error(`Password reset email delivery failed with status ${response.status}.`);
+        if (ctx) {
+          ctx.waitUntil(send);
+          return;
         }
+        await send;
       },
-    },
-    session: {
-      expiresIn: 60 * 60 * 4,
-      updateAge: 60 * 30,
-      cookieCache: { enabled: false },
-    },
-    trustedOrigins: [adminOrigin],
-    advanced: {
-      useSecureCookies: true,
-      defaultCookieAttributes: {
-        httpOnly: true,
-        secure: true,
-        sameSite: 'lax',
-        path: '/',
-      },
-    },
-  });
-}
-export async function handleAuthRequest(request: Request, env: AuthEnv): Promise<Response> {
-  const url = new URL(request.url);
-  if (!AUTH_PATHS.has(url.pathname)) {
-    return new Response('Not found', { status: 404 });
-  }
-  if (request.method !== 'GET' && request.method !== 'POST') {
-    return new Response('Method not allowed', { status: 405 });
-  }
-  return createAuth(env).handler(request);
-}
 
-export async function getAuthSession(request: Request, env: AuthEnv) {
-  return createAuth(env).api.getSession({ headers: request.headers });
-}
