@@ -1,47 +1,50 @@
 interface Env { ADMIN_API_ORIGIN?: string; }
 
-const PUBLIC_AUTH_PATHS = new Set([
+const ALLOWED_AUTH_PATHS = new Set([
   '/api/auth/sign-in/email',
   '/api/auth/sign-out',
   '/api/auth/get-session',
-  '/api/auth/forget-password',
+  '/api/auth/request-password-reset',
   '/api/auth/reset-password',
 ]);
 
-function extractCfAccessToken(request: Request): string | null {
-  const headerToken = request.headers.get('Cf-Access-Jwt-Assertion');
-  if (headerToken?.trim()) return headerToken.trim();
+function getBetterAuthCookie(request: Request): string | null {
   const cookieHeader = request.headers.get('cookie') || '';
-  for (const part of cookieHeader.split(';')) {
-    const [rawName, ...rest] = part.trim().split('=');
-    if (rawName === 'CF_Authorization' && rest.length > 0) {
-      const value = rest.join('=').trim();
-      if (value) return value;
-    }
-  }
-  return null;
+  const allowed = cookieHeader.split(';').map((part) => part.trim()).filter((part) => {
+    const name = part.split('=', 1)[0].trim();
+    return /^(?:__Secure-|__Host-)?better-auth\.(?:session_token|session_data|dont_remember)$/i.test(name);
+  });
+  return allowed.length ? allowed.join('; ') : null;
 }
 
 export const onRequest: PagesFunction<Env> = async (context) => {
   const incoming = context.request;
   const incomingUrl = new URL(incoming.url);
   const path = incomingUrl.pathname;
-  if (incoming.method === 'OPTIONS') return new Response(null, { status: 204 });
 
-  const incomingOrigin = incoming.headers.get('Origin');
-  if (incomingOrigin && incomingOrigin !== incomingUrl.origin) {
+  if (incoming.method === 'OPTIONS') {
+    return new Response(null, { status: 204 });
+  }
+
+  // This route only proxies /api/*. The Worker independently protects every
+  // business endpoint using the Better Auth session + active tenant membership.
+  if (!path.startsWith('/api/')) {
+    return Response.json({ error: 'Not found' }, { status: 404 });
+  }
+
+  const origin = incoming.headers.get('Origin');
+  if (origin && origin !== incomingUrl.origin) {
     return Response.json(
       { error: 'Forbidden cross-origin request.' },
       { status: 403, headers: { 'cache-control': 'no-store' } }
     );
   }
 
-  const isAuthRoute = PUBLIC_AUTH_PATHS.has(path);
-  const assertion = isAuthRoute ? null : extractCfAccessToken(incoming);
-  if (!isAuthRoute && !assertion) {
+  const isAuthRoute = ALLOWED_AUTH_PATHS.has(path);
+  if (path.startsWith('/api/auth/') && !isAuthRoute) {
     return Response.json(
-      { error: 'Authentication required.' },
-      { status: 401, headers: { 'cache-control': 'no-store' } }
+      { error: 'Authentication route not available.' },
+      { status: 404, headers: { 'cache-control': 'no-store' } }
     );
   }
 
@@ -49,27 +52,24 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     context.env.ADMIN_API_ORIGIN || 'https://zestro-admin-api.zestro-syl.workers.dev'
   ).replace(/\/+$/, '');
   const target = new URL(upstreamOrigin + incomingUrl.pathname + incomingUrl.search);
+
   const headers = new Headers(incoming.headers);
   headers.delete('host');
-  headers.delete('origin');
+  headers.delete('cookie');
+  headers.delete('Cf-Access-Jwt-Assertion');
+  headers.delete('cf-access-jwt-assertion');
+  // Keep Origin so Better Auth can enforce trustedOrigins and Worker CORS can
+  // apply its exact allowlist. The same-origin check above runs before proxying.
+  if (origin) headers.set('Origin', origin);
 
-  if (isAuthRoute) {
-    // Better Auth owns the app session; drop the legacy Access token.
-    headers.delete('Cf-Access-Jwt-Assertion');
-    headers.delete('cf-access-jwt-assertion');
-  } else {
-    headers.delete('cookie');
-    headers.set('Cf-Access-Jwt-Assertion', assertion!);
-  }
+  const sessionCookie = getBetterAuthCookie(incoming);
+  if (sessionCookie) headers.set('Cookie', sessionCookie);
 
-  // Forward only the Better Auth session cookie, not the Pages request's other
-  // cookies (e.g. Cloudflare Access) to the API origin.
-  if (isAuthRoute) {
-    const cookie = incoming.headers.get('cookie');
-    if (cookie) headers.set('cookie', cookie);
-  }
-
-  const init: RequestInit = { method: incoming.method, headers, redirect: 'manual' };
+  const init: RequestInit = {
+    method: incoming.method,
+    headers,
+    redirect: 'manual',
+  };
   if (incoming.method !== 'GET' && incoming.method !== 'HEAD') {
     init.body = await incoming.arrayBuffer();
   }
@@ -81,7 +81,11 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     responseHeaders.delete('access-control-allow-credentials');
     responseHeaders.set('cache-control', 'no-store');
     responseHeaders.set('x-content-type-options', 'nosniff');
-    return new Response(upstream.body, { status: upstream.status, headers: responseHeaders });
+
+    return new Response(upstream.body, {
+      status: upstream.status,
+      headers: responseHeaders,
+    });
   } catch (error) {
     console.error('ZESTRO Pages API proxy upstream failure:', error);
     return Response.json(
