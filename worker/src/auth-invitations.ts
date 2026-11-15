@@ -48,7 +48,8 @@ export async function issueInvitation(
   const token = base64Url(bytes);
   const tokenHash = await sha256(token);
   const invitationId = crypto.randomUUID();
-  const expiresAt = new Date(Date.now() + (input.expiresInHours ?? 48) * 60 * 60 * 1000).toISOString();
+  const expiryHours = Math.min(168, Math.max(1, Number(input.expiresInHours ?? 48)));
+  const expiresAt = new Date(Date.now() + expiryHours * 60 * 60 * 1000).toISOString();
 
   await env.DB.prepare(
     `INSERT INTO auth_invitation_tokens
@@ -143,7 +144,7 @@ export async function attachAuthUserToInvitation(
     `UPDATE memberships
      SET auth_subject = ?
      WHERE id = ? AND restaurant_id = ? AND status = 'invited'
-       AND auth_subject = 'pending-auth:' || id
+       AND (auth_subject = 'pending-auth:' || id OR auth_subject = ?)
        AND EXISTS (
          SELECT 1 FROM auth_invitation_tokens t
          WHERE t.id = ? AND t.membership_id = memberships.id
@@ -153,6 +154,7 @@ export async function attachAuthUserToInvitation(
     authUserId,
     invitation.membership_id,
     invitation.restaurant_id,
+    authUserId,
     invitation.id
   ).run();
   return Number(result.meta?.changes ?? 0) === 1;
@@ -167,7 +169,7 @@ export async function activateInvitationMembership(
   const result = await env.DB.prepare(
     `UPDATE memberships
      SET status = 'active'
-     WHERE id = ? AND restaurant_id = ? AND status = 'invited'
+     WHERE id = ? AND restaurant_id = ? AND status IN ('invited', 'active')
        AND auth_subject = ?
        AND EXISTS (
          SELECT 1 FROM auth_invitation_tokens t
