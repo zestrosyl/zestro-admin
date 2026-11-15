@@ -97,12 +97,6 @@ export const OverviewModule: React.FC<{
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#D7A65A]/20 bg-[#D7A65A]/[0.06] px-4 py-3">
-        <p className="text-xs text-[#F3EBDD]/70">
-          Live figures from your Cloudflare D1 restaurant database. No sample analytics are included.
-        </p>
-        <Badge variant="emerald">Live database</Badge>
-      </div>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
           title="Weekly Revenue"

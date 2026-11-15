@@ -1,8 +1,33 @@
-import React, { useState } from 'react';
-import { Plus, Pencil, Trash2, Tag } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { Plus, Pencil, Trash2, Tag, Sparkles, Eye } from 'lucide-react';
 import { Promotion } from '../types';
 import { Badge, ConfirmDialog, Modal } from '../components/ui/Primitives';
 import { formatCurrency } from '../services/api';
+
+function isCurrentlyValidOffer(p: Promotion, todayIso: string): boolean {
+  if (!p.active) return false;
+  const from = (p.validFrom || '').slice(0, 10);
+  const until = (p.validUntil || '').slice(0, 10);
+  if (from && from > todayIso) return false;
+  if (until && until < todayIso) return false;
+  return true;
+}
+
+function getOfferDiscountBadge(p: {
+  discountText?: string;
+  code?: string;
+  discountType: Promotion['discountType'];
+  discountValue: number;
+}, currency: string): string {
+  if (p.discountText?.trim()) return p.discountText.trim();
+  if (p.code?.trim()) {
+    if (p.discountType === 'Percentage' && p.discountValue > 0) return `${p.discountValue}% OFF`;
+    if (p.discountType === 'Fixed Amount' && p.discountValue > 0) {
+      return `${formatCurrency(p.discountValue, currency)} OFF`;
+    }
+  }
+  return '';
+}
 
 export const PromotionsModule: React.FC<{
   promotions: Promotion[];
@@ -15,10 +40,13 @@ export const PromotionsModule: React.FC<{
   const [editing, setEditing] = useState<Promotion | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Promotion | null>(null);
   const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   const todayIso = new Date().toISOString().slice(0, 10);
   const [form, setForm] = useState<Omit<Promotion, 'id' | 'usageCount'>>({
     title: '',
+    description: '',
+    discountText: '',
     code: '',
     discountType: 'Percentage',
     discountValue: 15,
@@ -26,13 +54,20 @@ export const PromotionsModule: React.FC<{
     validFrom: todayIso,
     validUntil: '2027-12-31',
     active: true,
-    description: '',
   });
+
+  const activeHomepageOffers = useMemo(
+    () => promotions.filter((p) => isCurrentlyValidOffer(p, todayIso)),
+    [promotions, todayIso]
+  );
 
   const openNew = () => {
     setEditing(null);
+    setFormError(null);
     setForm({
       title: '',
+      description: '',
+      discountText: '',
       code: '',
       discountType: 'Percentage',
       discountValue: 15,
@@ -40,30 +75,46 @@ export const PromotionsModule: React.FC<{
       validFrom: todayIso,
       validUntil: '2027-12-31',
       active: true,
-      description: '',
     });
     setModalOpen(true);
   };
 
   const openEdit = (p: Promotion) => {
     setEditing(p);
+    setFormError(null);
     setForm({
       title: p.title,
-      code: p.code,
+      description: p.description,
+      discountText: p.discountText || '',
+      code: p.code || '',
       discountType: p.discountType,
       discountValue: p.discountValue,
       minOrder: p.minOrder,
       validFrom: p.validFrom,
       validUntil: p.validUntil,
       active: p.active,
-      description: p.description,
     });
     setModalOpen(true);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.title.trim() || !form.code.trim() || saving) return;
+    setFormError(null);
+    const cleanTitle = form.title.trim();
+    if (!cleanTitle || saving) {
+      if (!cleanTitle) setFormError('Offer title is required.');
+      return;
+    }
+    if (form.validFrom && form.validUntil && form.validFrom > form.validUntil) {
+      setFormError('Start date cannot be after end date.');
+      return;
+    }
+    const cleanCode = form.code.trim().toUpperCase();
+    if (cleanCode && !/^[A-Z0-9_-]{2,32}$/.test(cleanCode)) {
+      setFormError('Promo code must be 2–32 characters (letters, numbers, - or _).');
+      return;
+    }
+
     setSaving(true);
     try {
       const ok = await onSavePromotion(
@@ -71,9 +122,11 @@ export const PromotionsModule: React.FC<{
           id: editing ? editing.id : `promo-${Date.now()}`,
           usageCount: editing ? editing.usageCount : 0,
           ...form,
-          title: form.title.trim(),
-          code: form.code.trim().toUpperCase(),
+          title: cleanTitle,
           description: form.description.trim(),
+          discountText: (form.discountText || '').trim(),
+          code: cleanCode,
+          hasPromoCode: cleanCode.length > 0,
         },
         !editing
       );
@@ -83,11 +136,13 @@ export const PromotionsModule: React.FC<{
     }
   };
 
+  const modalPreviewBadge = getOfferDiscountBadge(form, currency);
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-[#F3EBDD]/70">
-          Create live promo codes validated server-side during customer checkout.
+          Manage homepage announcement offers and optional checkout promo codes. Active, in-date offers appear automatically on the customer website header.
         </p>
         {canManage && (
           <button
@@ -95,211 +150,334 @@ export const PromotionsModule: React.FC<{
             onClick={openNew}
             className="flex items-center gap-2 rounded-xl bg-[#D7A65A] px-4 py-2.5 text-sm font-semibold text-[#101B17] hover:bg-[#e3b772]"
           >
-            <Plus className="h-4 w-4" /> New Promotion
+            <Plus className="h-4 w-4" /> New Offer
           </button>
+        )}
+      </div>
+
+      {/* Live Customer Header Banner Preview */}
+      <div className="rounded-2xl border border-[#2C3D34] bg-[#1D2922] p-4">
+        <div className="mb-2.5 flex items-center justify-between">
+          <span className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-[#D7A65A]">
+            <Eye className="h-3.5 w-3.5" /> Customer Homepage Banner Preview
+          </span>
+          <span className="text-[11px] text-[#F3EBDD]/60">
+            {activeHomepageOffers.length === 0
+              ? 'Hidden on customer website (no active in-date offers)'
+              : `${activeHomepageOffers.length} active offer${activeHomepageOffers.length > 1 ? 's' : ''} live`}
+          </span>
+        </div>
+
+        {activeHomepageOffers.length > 0 ? (
+          <div className="flex flex-wrap items-center justify-center gap-2.5 rounded-xl border border-[#D7A65A]/30 bg-[#101B17] px-4 py-2.5 text-center text-xs text-[#F3EBDD]">
+            <Sparkles className="h-3.5 w-3.5 shrink-0 text-[#D7A65A]" />
+            {getOfferDiscountBadge(activeHomepageOffers[0], currency) && (
+              <span className="rounded-full bg-[#D7A65A] px-2.5 py-0.5 text-[11px] font-bold tracking-wide text-[#101210]">
+                {getOfferDiscountBadge(activeHomepageOffers[0], currency)}
+              </span>
+            )}
+            <span className="font-semibold text-[#F3EBDD]">{activeHomepageOffers[0].title}</span>
+            {activeHomepageOffers[0].description && (
+              <span className="text-[#F3EBDD]/75">— {activeHomepageOffers[0].description}</span>
+            )}
+            {activeHomepageOffers[0].code && (
+              <span className="rounded-md border border-[#D7A65A]/40 bg-[#D7A65A]/10 px-2 py-0.5 font-mono text-[11px] font-semibold text-[#D7A65A]">
+                Code: {activeHomepageOffers[0].code}
+              </span>
+            )}
+          </div>
+        ) : (
+          <div className="rounded-xl border border-dashed border-[#2C3D34] bg-[#101B17]/60 px-4 py-3 text-center text-xs text-[#F3EBDD]/50">
+            No active offers within today&apos;s date range. The announcement banner is hidden on the customer homepage.
+          </div>
         )}
       </div>
 
       {promotions.length === 0 ? (
         <div className="rounded-2xl border border-[#2C3D34] bg-[#1D2922] p-10 text-center">
-          <p className="font-serif text-lg font-semibold text-[#F3EBDD]">No promotions active</p>
+          <p className="font-serif text-lg font-semibold text-[#F3EBDD]">No offers created yet</p>
           <p className="mt-1 text-xs text-[#F3EBDD]/60">
-            Create percentage or fixed-amount promo codes that guests can apply in their cart.
+            Create a homepage announcement offer or a checkout promo code to highlight specials for your guests.
           </p>
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
-          {promotions.map((p) => (
-            <div
-              key={p.id}
-              className="flex flex-col rounded-2xl border border-[#2C3D34] bg-[#1D2922] p-5 transition hover:border-[#D7A65A]/45"
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#101B17] text-[#D7A65A]">
-                    <Tag className="h-4 w-4" />
+          {promotions.map((p) => {
+            const discountBadge = getOfferDiscountBadge(p, currency);
+            const liveNow = isCurrentlyValidOffer(p, todayIso);
+            return (
+              <div
+                key={p.id}
+                className="flex flex-col rounded-2xl border border-[#2C3D34] bg-[#1D2922] p-5 transition hover:border-[#D7A65A]/45"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-2.5">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#101B17] text-[#D7A65A]">
+                      <Tag className="h-4 w-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <h3 className="truncate font-serif text-base font-semibold text-[#F3EBDD]">
+                        {p.title}
+                      </h3>
+                      <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+                        {p.code ? (
+                          <span className="font-mono text-xs font-bold text-[#D7A65A]">
+                            {p.code}
+                          </span>
+                        ) : (
+                          <span className="text-[11px] text-[#F3EBDD]/50">
+                            Homepage announcement
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={!canManage}
+                    onClick={() => void onSavePromotion({ ...p, active: !p.active }, false)}
+                    title="Toggle active status"
+                  >
+                    <Badge variant={liveNow ? 'emerald' : p.active ? 'amber' : 'neutral'}>
+                      {liveNow ? 'Live' : p.active ? 'Scheduled' : 'Paused'}
+                    </Badge>
+                  </button>
+                </div>
+
+                <p className="mt-3 flex-1 text-xs leading-relaxed text-[#F3EBDD]/70">
+                  {p.description || (p.code ? `Minimum order ${formatCurrency(p.minOrder, currency)}` : 'Promotional announcement')}
+                </p>
+
+                <div className="mt-4 grid grid-cols-2 gap-2 rounded-xl border border-[#2C3D34] bg-[#101B17] p-3 text-xs">
+                  <div>
+                    <p className="text-[#F3EBDD]/50">Highlight</p>
+                    <p className="truncate font-semibold text-[#F3EBDD]">
+                      {discountBadge || 'Announcement'}
+                    </p>
                   </div>
                   <div>
-                    <h3 className="font-serif text-base font-semibold text-[#F3EBDD]">{p.title}</h3>
-                    <span className="font-mono text-xs font-bold text-[#D7A65A]">{p.code}</span>
+                    <p className="text-[#F3EBDD]/50">{p.code ? 'Redemptions' : 'Checkout'}</p>
+                    <p className="font-semibold text-[#D7A65A]">
+                      {p.code ? `${p.usageCount} uses` : 'Display only'}
+                    </p>
                   </div>
                 </div>
-                <button
-                  type="button"
-                  disabled={!canManage}
-                  onClick={() => void onSavePromotion({ ...p, active: !p.active }, false)}
-                >
-                  <Badge variant={p.active ? 'emerald' : 'neutral'}>
-                    {p.active ? 'Active' : 'Paused'}
-                  </Badge>
-                </button>
-              </div>
 
-              <p className="mt-3 flex-1 text-xs leading-relaxed text-[#F3EBDD]/70">
-                {p.description || `Minimum order ${formatCurrency(p.minOrder, currency)}`}
-              </p>
-
-              <div className="mt-4 grid grid-cols-2 gap-2 rounded-xl border border-[#2C3D34] bg-[#101B17] p-3 text-xs">
-                <div>
-                  <p className="text-[#F3EBDD]/50">Offer</p>
-                  <p className="font-semibold text-[#F3EBDD]">
-                    {p.discountType === 'Percentage'
-                      ? `${p.discountValue}% Off`
-                      : p.discountType === 'Fixed Amount'
-                      ? `${formatCurrency(p.discountValue, currency)} Off`
-                      : 'Complimentary Item'}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-[#F3EBDD]/50">Redemptions</p>
-                  <p className="font-semibold text-[#D7A65A]">{p.usageCount} uses</p>
+                <div className="mt-4 flex items-center justify-between border-t border-[#2C3D34] pt-3 text-xs text-[#F3EBDD]/55">
+                  <span>
+                    {p.validFrom ? `${p.validFrom} → ` : ''}
+                    {p.validUntil || 'Ongoing'}
+                  </span>
+                  {canManage && (
+                    <div className="flex gap-1.5">
+                      <button
+                        type="button"
+                        aria-label={`Edit ${p.title}`}
+                        onClick={() => openEdit(p)}
+                        className="rounded-lg border border-[#2C3D34] bg-[#101B17] p-1.5 text-[#F3EBDD]/80 hover:text-[#D7A65A]"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`Delete ${p.title}`}
+                        onClick={() => setDeleteTarget(p)}
+                        className="rounded-lg border border-[#2C3D34] bg-[#101B17] p-1.5 text-rose-300/80 hover:text-rose-300"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
-
-              <div className="mt-4 flex items-center justify-between border-t border-[#2C3D34] pt-3 text-xs text-[#F3EBDD]/55">
-                <span>
-                  {p.validFrom ? `${p.validFrom} → ` : ''}
-                  {p.validUntil || 'Ongoing'}
-                </span>
-                {canManage && (
-                  <div className="flex gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => openEdit(p)}
-                      className="rounded-lg border border-[#2C3D34] bg-[#101B17] p-1.5 text-[#F3EBDD]/80 hover:text-[#D7A65A]"
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setDeleteTarget(p)}
-                      className="rounded-lg border border-[#2C3D34] bg-[#101B17] p-1.5 text-rose-300/80 hover:text-rose-300"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
       <Modal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
-        title={editing ? 'Edit Promotion' : 'Create Promotion'}
+        title={editing ? 'Edit Offer' : 'Create Offer'}
       >
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
-              <label className="mb-1.5 block text-xs font-medium text-[#F3EBDD]/75">Title</label>
+              <label className="mb-1.5 block text-xs font-medium text-[#F3EBDD]/75">
+                Offer Title *
+              </label>
               <input
                 type="text"
                 required
+                maxLength={120}
                 value={form.title}
                 onChange={(e) => setForm({ ...form, title: e.target.value })}
+                placeholder="Weekend Chef's Special"
                 className="w-full rounded-xl border border-[#2C3D34] bg-[#101B17] px-3.5 py-2.5 text-sm text-[#F3EBDD]"
               />
             </div>
             <div>
-              <label className="mb-1.5 block text-xs font-medium text-[#F3EBDD]/75">Promo Code</label>
+              <label className="mb-1.5 block text-xs font-medium text-[#F3EBDD]/75">
+                Discount Text (optional)
+              </label>
               <input
                 type="text"
-                required
-                value={form.code}
-                onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase() })}
-                className="w-full rounded-xl border border-[#2C3D34] bg-[#101B17] px-3.5 py-2.5 font-mono text-sm text-[#D7A65A]"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-3 gap-3">
-            <div>
-              <label className="mb-1.5 block text-xs font-medium text-[#F3EBDD]/75">Type</label>
-              <select
-                value={form.discountType}
-                onChange={(e) =>
-                  setForm({ ...form, discountType: e.target.value as Promotion['discountType'] })
-                }
-                className="w-full rounded-xl border border-[#2C3D34] bg-[#101B17] px-3 py-2.5 text-xs text-[#F3EBDD]"
-              >
-                <option value="Percentage">Percentage</option>
-                <option value="Fixed Amount">Fixed Amount</option>
-                <option value="Complimentary Item">Complimentary Item</option>
-              </select>
-            </div>
-            <div>
-              <label className="mb-1.5 block text-xs font-medium text-[#F3EBDD]/75">Value</label>
-              <input
-                type="number"
-                step="0.01"
-                min={0}
-                value={form.discountValue}
-                onChange={(e) => setForm({ ...form, discountValue: Number(e.target.value) })}
-                className="w-full rounded-xl border border-[#2C3D34] bg-[#101B17] px-3 py-2.5 text-sm text-[#F3EBDD]"
-              />
-            </div>
-            <div>
-              <label className="mb-1.5 block text-xs font-medium text-[#F3EBDD]/75">Minimum Order</label>
-              <input
-                type="number"
-                step="0.01"
-                min={0}
-                value={form.minOrder}
-                onChange={(e) => setForm({ ...form, minOrder: Number(e.target.value) })}
-                className="w-full rounded-xl border border-[#2C3D34] bg-[#101B17] px-3 py-2.5 text-sm text-[#F3EBDD]"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="mb-1.5 block text-xs font-medium text-[#F3EBDD]/75">Valid From</label>
-              <input
-                type="date"
-                required
-                value={form.validFrom}
-                onChange={(e) => setForm({ ...form, validFrom: e.target.value })}
-                className="w-full rounded-xl border border-[#2C3D34] bg-[#101B17] px-3 py-2.5 text-sm text-[#F3EBDD]"
-              />
-            </div>
-            <div>
-              <label className="mb-1.5 block text-xs font-medium text-[#F3EBDD]/75">Valid Until</label>
-              <input
-                type="date"
-                required
-                value={form.validUntil}
-                onChange={(e) => setForm({ ...form, validUntil: e.target.value })}
-                className="w-full rounded-xl border border-[#2C3D34] bg-[#101B17] px-3 py-2.5 text-sm text-[#F3EBDD]"
+                maxLength={40}
+                value={form.discountText || ''}
+                onChange={(e) => setForm({ ...form, discountText: e.target.value })}
+                placeholder="e.g. 20% OFF or Free Dessert"
+                className="w-full rounded-xl border border-[#2C3D34] bg-[#101B17] px-3.5 py-2.5 text-sm text-[#F3EBDD]"
               />
             </div>
           </div>
 
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-[#F3EBDD]/75">Description</label>
+            <label className="mb-1.5 block text-xs font-medium text-[#F3EBDD]/75">
+              Short Promotional Description
+            </label>
             <textarea
               rows={2}
+              maxLength={240}
               value={form.description}
               onChange={(e) => setForm({ ...form, description: e.target.value })}
+              placeholder="Enjoy our seasonal tasting platter every Friday & Saturday evening."
               className="w-full rounded-xl border border-[#2C3D34] bg-[#101B17] px-3.5 py-2.5 text-sm text-[#F3EBDD]"
             />
           </div>
 
-          <div className="flex justify-end gap-3 pt-2">
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-[#F3EBDD]/75">
+              Coupon / Promo Code (optional)
+            </label>
+            <input
+              type="text"
+              maxLength={32}
+              value={form.code}
+              onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase() })}
+              placeholder="Leave blank for homepage announcement only"
+              className="w-full rounded-xl border border-[#2C3D34] bg-[#101B17] px-3.5 py-2.5 font-mono text-sm text-[#D7A65A]"
+            />
+            <p className="mt-1 text-[11px] text-[#F3EBDD]/55">
+              Optional. Add a code only if guests should also apply a discount at checkout.
+            </p>
+          </div>
+
+          {form.code.trim().length > 0 && (
+            <div className="grid grid-cols-3 gap-3 rounded-xl border border-[#2C3D34] bg-[#101B17]/60 p-3">
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-[#F3EBDD]/75">Type</label>
+                <select
+                  value={form.discountType}
+                  onChange={(e) =>
+                    setForm({ ...form, discountType: e.target.value as Promotion['discountType'] })
+                  }
+                  className="w-full rounded-xl border border-[#2C3D34] bg-[#101B17] px-3 py-2 text-xs text-[#F3EBDD]"
+                >
+                  <option value="Percentage">Percentage</option>
+                  <option value="Fixed Amount">Fixed Amount</option>
+                  <option value="Complimentary Item">Complimentary Item</option>
+                </select>
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-[#F3EBDD]/75">Value</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min={0}
+                  value={form.discountValue}
+                  onChange={(e) => setForm({ ...form, discountValue: Number(e.target.value) })}
+                  className="w-full rounded-xl border border-[#2C3D34] bg-[#101B17] px-3 py-2 text-sm text-[#F3EBDD]"
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-[#F3EBDD]/75">Min Order</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min={0}
+                  value={form.minOrder}
+                  onChange={(e) => setForm({ ...form, minOrder: Number(e.target.value) })}
+                  className="w-full rounded-xl border border-[#2C3D34] bg-[#101B17] px-3 py-2 text-sm text-[#F3EBDD]"
+                />
+              </div>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="mb-1.5 block text-xs font-medium text-[#F3EBDD]/75">Start Date</label>
+              <input
+                type="date"
+                value={form.validFrom}
+                onChange={(e) => setForm({ ...form, validFrom: e.target.value })}
+                className="w-full rounded-xl border border-[#2C3D34] bg-[#101B17] px-3.5 py-2.5 text-sm text-[#F3EBDD]"
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-xs font-medium text-[#F3EBDD]/75">End Date</label>
+              <input
+                type="date"
+                value={form.validUntil}
+                onChange={(e) => setForm({ ...form, validUntil: e.target.value })}
+                className="w-full rounded-xl border border-[#2C3D34] bg-[#101B17] px-3.5 py-2.5 text-sm text-[#F3EBDD]"
+              />
+            </div>
+          </div>
+
+          <label className="flex items-center gap-2 text-xs font-medium text-[#F3EBDD]">
+            <input
+              type="checkbox"
+              checked={form.active}
+              onChange={(e) => setForm({ ...form, active: e.target.checked })}
+              className="h-4 w-4 accent-[#D7A65A]"
+            />
+            Active (publish on customer homepage during validity dates)
+          </label>
+
+          {/* Live Customer Homepage Banner Preview */}
+          <div className="rounded-xl border border-[#2C3D34] bg-[#101B17]/80 p-3">
+            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[#D7A65A]">
+              Customer Homepage Preview
+            </p>
+            <div className="flex flex-wrap items-center justify-center gap-2 rounded-lg border border-[#D7A65A]/30 bg-[#101B17] px-3 py-2 text-center text-xs text-[#F3EBDD]">
+              <Sparkles className="h-3.5 w-3.5 shrink-0 text-[#D7A65A]" />
+              {modalPreviewBadge && (
+                <span className="rounded-full bg-[#D7A65A] px-2 py-0.5 text-[10px] font-bold text-[#101210]">
+                  {modalPreviewBadge}
+                </span>
+              )}
+              <span className="font-semibold">
+                {form.title.trim() || 'Your offer title'}
+              </span>
+              {form.description.trim() && (
+                <span className="text-[#F3EBDD]/75">— {form.description.trim()}</span>
+              )}
+              {form.code.trim() && (
+                <span className="rounded border border-[#D7A65A]/40 bg-[#D7A65A]/10 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-[#D7A65A]">
+                  Code: {form.code.trim().toUpperCase()}
+                </span>
+              )}
+            </div>
+          </div>
+
+          {formError && (
+            <p className="text-xs font-medium text-rose-300">{formError}</p>
+          )}
+
+          <div className="flex justify-end gap-2 pt-2">
             <button
               type="button"
               onClick={() => setModalOpen(false)}
-              className="rounded-xl border border-[#2C3D34] bg-[#101B17] px-4 py-2 text-sm"
+              className="rounded-xl border border-[#2C3D34] px-4 py-2 text-xs text-[#F3EBDD]"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={saving}
-              className="rounded-xl bg-[#D7A65A] px-5 py-2 text-sm font-semibold text-[#101B17] disabled:opacity-50"
+              className="rounded-xl bg-[#D7A65A] px-5 py-2 text-xs font-semibold text-[#101B17] hover:bg-[#e3b772] disabled:opacity-50"
             >
-              {saving ? 'Saving...' : 'Save Offer'}
+              {saving ? 'Saving...' : editing ? 'Save Offer' : 'Create Offer'}
             </button>
           </div>
         </form>
@@ -307,13 +485,14 @@ export const PromotionsModule: React.FC<{
 
       <ConfirmDialog
         open={Boolean(deleteTarget)}
-        title="Delete Promotion"
-        message={`Delete promo code "${deleteTarget?.code}"?`}
         onCancel={() => setDeleteTarget(null)}
         onConfirm={() => {
           if (deleteTarget) onDeletePromotion(deleteTarget.id);
           setDeleteTarget(null);
         }}
+        title="Delete Offer"
+        message={`Delete "${deleteTarget?.title}"? It will immediately stop appearing on the customer website.`}
+        confirmLabel="Delete"
       />
     </div>
   );

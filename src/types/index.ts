@@ -61,7 +61,7 @@ export interface MediaAsset {
   title: string;
   url: string;
   r2Key: string;
-  folder: 'dishes' | 'ambiance' | 'banners' | 'gallery';
+  folder: 'dishes' | 'ambiance' | 'banners' | 'gallery' | 'branding';
   dimensions: string;
   sizeKb: number;
   uploadedAt: string;
@@ -170,6 +170,8 @@ export interface Promotion {
   id: string;
   title: string;
   code: string;
+  hasPromoCode?: boolean;
+  discountText?: string;
   discountType: 'Percentage' | 'Fixed Amount' | 'Complimentary Item';
   discountValue: number;
   minOrder: number;
@@ -214,8 +216,8 @@ export interface RestaurantSettings {
   qrTableOrderingEnabled: boolean;
   autoAcceptOrders: boolean;
   waiterCallSoundEnabled: boolean;
-  workerApiBaseUrl: string;
-  r2PublicBucketUrl: string;
+  logoKey?: string;
+  logoUrl?: string;
 }
 
 export interface ActivityEvent {

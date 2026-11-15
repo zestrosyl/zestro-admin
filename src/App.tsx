@@ -75,8 +75,8 @@ const EMPTY_SETTINGS: RestaurantSettings = {
   qrTableOrderingEnabled: true,
   autoAcceptOrders: false,
   waiterCallSoundEnabled: true,
-  workerApiBaseUrl: 'https://zestro-admin-api.zestro-syl.workers.dev',
-  r2PublicBucketUrl: 'https://zestro-customer-api.zestro-syl.workers.dev/api/media',
+  logoKey: '',
+  logoUrl: '',
 };
 
 function mapMenuRow(row: Record<string, unknown>): MenuItem {
