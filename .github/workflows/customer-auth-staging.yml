@@ -1,0 +1,56 @@
+name: Customer Authentication Staging Validation
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [live-backend/nov-14-2026]
+    paths:
+      - 'worker-public/**'
+      - 'worker/migrations/0003_customer_accounts.sql'
+      - 'worker/migrations/0004_customer_order_link.sql'
+      - '.github/workflows/customer-auth-staging.yml'
+
+jobs:
+  worker-typecheck:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: worker-public
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: worker-public/package-lock.json
+      - run: npm ci
+      - run: npx tsc --noEmit
+
+  staging-integration:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: customer-auth-staging
+    defaults:
+      run:
+        working-directory: worker-public
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: worker-public/package-lock.json
+      - run: npm ci
+      - name: Assert staging-only configuration
+        shell: bash
+        run: |
+          grep -q 'database_id = "db949199-24f0-4c8c-8694-c06f59168d62"' wrangler.toml
+          ! grep -q 'database_id = "7062f9eb-889b-46c1-87f4-03270a50b5b8"' <(sed -n '/\[env.staging\]/,$p' wrangler.toml)
+          test -n "${{ secrets.CF_STAGING_API_TOKEN }}"
+          test -n "${{ vars.CF_ACCOUNT_ID }}"
+          test -n "${{ vars.STAGING_CUSTOMER_API_URL }}"
+      - name: Run staging customer-auth HTTP integration tests
+        env:
+          STAGING_CUSTOMER_API_URL: ${{ vars.STAGING_CUSTOMER_API_URL }}
+          STAGING_RESTAURANT_SLUG: zestro-customer-staging
+        run: node --test test/customer-auth.staging.test.mjs
