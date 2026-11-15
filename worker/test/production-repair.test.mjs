@@ -162,6 +162,11 @@ describe('ZESTRO Production Functionality Repair — Full End-to-End Suite', () 
       ACCESS_TEAM_DOMAIN: TEAM_DOMAIN,
       ACCESS_AUD,
       ALLOWED_ORIGINS: 'https://zestro-admin.pages.dev,https://zestro-customer-website.pages.dev',
+      BETTER_AUTH_SECRET: 'integration-test-secret-minimum-32-characters-long',
+      BETTER_AUTH_URL: 'https://auth-test.zestro.invalid',
+      ADMIN_APP_URL: 'https://zestro-admin.pages.dev',
+      RESEND_API_KEY: 'test-resend-key',
+      RESEND_FROM_EMAIL: 'no-reply@zestro.test',
     };
 
     // The production Worker authenticates Better Auth sessions. This suite
@@ -227,10 +232,15 @@ describe('ZESTRO Production Functionality Repair — Full End-to-End Suite', () 
       path.join(WORKER_ROOT, 'migrations/0002_production_functionality_repair.sql'),
       'utf8'
     );
+    const mig3 = fs.readFileSync(
+      path.join(WORKER_ROOT, 'migrations/0003_better_auth.sql'),
+      'utf8'
+    );
 
     // Fresh D1 migration test
     await execSqlScript(d1, mig1);
     await execSqlScript(d1, mig2);
+    await execSqlScript(d1, mig3);
 
     const tablesRes = await d1
       .prepare(
@@ -361,12 +371,21 @@ describe('ZESTRO Production Functionality Repair — Full End-to-End Suite', () 
 
     // Owner A invites a Server ('staff' role) and a Manager ('manager' role)
     const ownerAJwt = await signAccessJwt({ email: 'owner-a@zestro.test', sub: 'sub-owner-a' });
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = async (input, init) => {
+      const target = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      if (target === 'https://api.resend.com/emails') {
+        return new Response(JSON.stringify({ id: 'test-email-id' }), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      return realFetch(input, init);
+    };
     const inviteStaffRes = await adminFetch('/api/staff', {
       method: 'POST',
       jwt: ownerAJwt,
       json: { name: 'Cashier One', email: 'cashier@zestro.test', role: 'Server', phone: '01700000001' },
     });
-    assert.equal(inviteStaffRes.status, 201);
+    globalThis.fetch = realFetch;
+    assert.equal(inviteStaffRes.status, 201, await inviteStaffRes.clone().text());
     const invitedStaff = await inviteStaffRes.json();
 
     const inviteManagerRes = await adminFetch('/api/staff', {
@@ -374,7 +393,7 @@ describe('ZESTRO Production Functionality Repair — Full End-to-End Suite', () 
       jwt: ownerAJwt,
       json: { name: 'Floor Manager', email: 'manager@zestro.test', role: 'Manager' },
     });
-    assert.equal(inviteManagerRes.status, 201);
+    assert.equal(inviteManagerRes.status, 201, await inviteManagerRes.clone().text());
 
     // Seed a read-only viewer in D1 to verify viewer RBAC too
     await d1
@@ -781,7 +800,7 @@ describe('ZESTRO Production Functionality Repair — Full End-to-End Suite', () 
       jwt: cashierJwt,
       json: { status: 'acknowledged' },
     });
-    assert.equal(ackRes.status, 200);
+    assert.equal(ackRes.status, 200, await ackRes.clone().text());
 
     const resolveRes = await adminFetch(`/api/waiter-calls/${waiterData1.id}`, {
       method: 'PATCH',
