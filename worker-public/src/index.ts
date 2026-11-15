@@ -6,6 +6,19 @@ export interface Env {
   WHATSAPP_NUMBER: string;
 }
 
+interface CustomerRow { id:string; restaurant_id:string; email:string; name:string; phone:string|null; default_address:string|null; password_hash:string; password_salt:string; }
+const CUSTOMER_COOKIE='zestro_customer_session';
+const PASSWORD_ITERATIONS=210000; const SESSION_DAYS=30; const encCustomer=new TextEncoder();
+function toB64Url(bytes:Uint8Array):string{return btoa(String.fromCharCode(...bytes)).replace(/=/g,'').replace(/\+/g,'-').replace(/\//g,'_');}
+function fromB64Url(raw:string):Uint8Array{return Uint8Array.from(atob(raw.replace(/-/g,'+').replace(/_/g,'/')+'='.repeat((4-raw.length%4)%4)),c=>c.charCodeAt(0));}
+async function sha256Customer(value:string):Promise<string>{const out=new Uint8Array(await crypto.subtle.digest('SHA-256',encCustomer.encode(value)));return [...out].map(v=>v.toString(16).padStart(2,'0')).join('');}
+async function deriveCustomerPassword(password:string,salt:Uint8Array):Promise<string>{const key=await crypto.subtle.importKey('raw',encCustomer.encode(password),'PBKDF2',false,['deriveBits']);const raw=await crypto.subtle.deriveBits({name:'PBKDF2',hash:'SHA-256',salt,iterations:PASSWORD_ITERATIONS},key,256);return toB64Url(new Uint8Array(raw));}
+function customerTokenFromCookie(req:Request):string|null{for(const part of (req.headers.get('Cookie')||'').split(';')){const [key,...value]=part.trim().split('=');if(key===CUSTOMER_COOKIE)return value.join('=')||null;}return null;}
+function customerSessionCookie(token:string,expires:Date):string{return CUSTOMER_COOKIE+'='+token+'; Path=/; HttpOnly; Secure; SameSite=None; Expires='+expires.toUTCString();}
+function customerPublic(row:CustomerRow){return {uid:row.id,email:row.email,displayName:row.name,phone:row.phone||'',defaultAddress:row.default_address||''};}
+function customerEmail(raw:string):string|null{const email=raw.trim().toLowerCase();return email.length<=200&&/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)?email:null;}
+async function getCustomerFromSession(req:Request,db:D1Database,restaurantId:string):Promise<CustomerRow|null>{const token=customerTokenFromCookie(req);if(!token||token.length>128)return null;return db.prepare('SELECT c.id,c.restaurant_id,c.email,c.name,c.phone,c.default_address,c.password_hash,c.password_salt FROM customer_sessions s JOIN customers c ON c.id=s.customer_id AND c.restaurant_id=s.restaurant_id WHERE s.token_hash=? AND s.restaurant_id=? AND s.expires_at>CURRENT_TIMESTAMP LIMIT 1').bind(await sha256Customer(token),restaurantId).first<CustomerRow>();}
+async function createCustomerSession(db:D1Database,restaurantId:string,customerId:string):Promise<{token:string;expires:Date}>{const token=toB64Url(crypto.getRandomValues(new Uint8Array(32)));const expires=new Date(Date.now()+SESSION_DAYS*86400000);await db.prepare('INSERT INTO customer_sessions(id,restaurant_id,customer_id,token_hash,expires_at) VALUES(?,?,?,?,?)').bind(uid(),restaurantId,customerId,await sha256Customer(token),expires.toISOString()).run();return {token,expires};}
 interface RestaurantRow {
   id: string;
   name: string;
