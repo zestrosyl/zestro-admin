@@ -53,21 +53,19 @@ export async function issueInvitation(
   const expiryHours = Math.min(168, Math.max(1, Number(input.expiresInHours ?? 48)));
   const expiresAt = new Date(Date.now() + expiryHours * 60 * 60 * 1000).toISOString();
 
-  await env.DB.prepare(
-    `INSERT INTO auth_invitation_tokens
-      (id, restaurant_id, membership_id, token_hash, expires_at, created_by_membership_id)
-     SELECT ?, ?, m.id, ?, ?, ?
-     FROM memberships m
-     WHERE m.id = ? AND m.restaurant_id = ? AND m.status = 'invited'`
-  ).bind(
-    invitationId,
-    input.restaurantId,
-    tokenHash,
-    expiresAt,
-    input.createdByMembershipId,
-    input.membershipId,
-    input.restaurantId
-  ).run();
+  await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE auth_invitation_tokens SET revoked_at = CURRENT_TIMESTAMP
+       WHERE membership_id = ? AND restaurant_id = ? AND consumed_at IS NULL AND revoked_at IS NULL`
+    ).bind(input.membershipId, input.restaurantId),
+    env.DB.prepare(
+      `INSERT INTO auth_invitation_tokens
+        (id, restaurant_id, membership_id, token_hash, expires_at, created_by_membership_id)
+       SELECT ?, ?, m.id, ?, ?, ?
+       FROM memberships m
+       WHERE m.id = ? AND m.restaurant_id = ? AND m.status = 'invited'`
+    ).bind(invitationId, input.restaurantId, tokenHash, expiresAt, input.createdByMembershipId, input.membershipId, input.restaurantId),
+  ]);
 
   const row = await env.DB.prepare(
     'SELECT id FROM auth_invitation_tokens WHERE id = ?'
@@ -92,7 +90,7 @@ export async function reserveInvitation(env: InvitationEnv, invitation: Invitati
     `UPDATE auth_invitation_tokens SET reserved_at = CURRENT_TIMESTAMP
      WHERE id = ? AND membership_id = ? AND consumed_at IS NULL AND revoked_at IS NULL
        AND expires_at > CURRENT_TIMESTAMP
-       AND (reserved_at IS NULL OR reserved_at < datetime('now', '-10 minutes'))`
+       AND (reserved_at IS NULL OR reserved_at < datetime('now', '-10 minutes') OR auth_user_id IS NOT NULL)`
   ).bind(invitation.id, invitation.membership_id).run();
   return Number(result.meta?.changes ?? 0) === 1;
 }
