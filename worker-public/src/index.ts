@@ -33,12 +33,159 @@ function json(data: unknown, status = 200, origin: string | null = null, env?: E
     headers.set('access-control-allow-origin', origin);
     headers.set('vary', 'Origin');
   }
-  headers.set('access-control-allow-methods', 'GET,POST,OPTIONS');
-  headers.set('access-control-allow-headers', 'Content-Type,Idempotency-Key,X-Restaurant-Slug');
+  headers.set('access-control-allow-methods', 'GET,POST,PATCH,OPTIONS');
+  headers.set('access-control-allow-headers', 'Content-Type,Authorization,Idempotency-Key,X-Restaurant-Slug');
   return new Response(JSON.stringify(data), { status, headers });
 }
 
-const err = (message: string) => ({ error: message });
+const err = (message: string, code?: string) => (code ? { error: message, code } : { error: message });
+
+function bytesToHex(bytes: Uint8Array): string {
+  return Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+function hexToBytes(hex: string): Uint8Array {
+  const clean = hex.trim();
+  const out = new Uint8Array(clean.length / 2);
+  for (let i = 0; i < out.length; i += 1) {
+    out[i] = parseInt(clean.slice(i * 2, i * 2 + 2), 16);
+  }
+  return out;
+}
+
+function constantTimeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i += 1) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return diff === 0;
+}
+
+async function sha256Hex(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
+  return bytesToHex(new Uint8Array(digest));
+}
+
+async function hashCustomerPassword(password: string): Promise<string> {
+  const salt = new Uint8Array(16);
+  crypto.getRandomValues(salt);
+  const iterations = 100000;
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(password),
+    'PBKDF2',
+    false,
+    ['deriveBits']
+  );
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', hash: 'SHA-256', salt: salt as BufferSource, iterations },
+    key,
+    256
+  );
+  return `pbkdf2_sha256$${iterations}$${bytesToHex(salt)}$${bytesToHex(new Uint8Array(bits))}`;
+}
+
+async function verifyCustomerPassword(password: string, stored: string): Promise<boolean> {
+  const parts = stored.split('$');
+  if (parts.length !== 4 || parts[0] !== 'pbkdf2_sha256') return false;
+  const iterations = Number(parts[1]);
+  if (!Number.isFinite(iterations) || iterations < 10000) return false;
+  const salt = hexToBytes(parts[2]);
+  const expectedHex = parts[3];
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(password),
+    'PBKDF2',
+    false,
+    ['deriveBits']
+  );
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', hash: 'SHA-256', salt: salt as BufferSource, iterations },
+    key,
+    256
+  );
+  return constantTimeEqual(bytesToHex(new Uint8Array(bits)), expectedHex);
+}
+
+interface CustomerRow {
+  id: string;
+  restaurant_id: string;
+  email: string;
+  password_hash: string;
+  display_name: string;
+  phone: string;
+  default_address: string;
+  preferred_order_type: 'dine_in' | 'takeaway' | 'delivery';
+  created_at: string;
+  updated_at: string;
+}
+
+function serializeCustomer(row: CustomerRow) {
+  return {
+    user: {
+      uid: row.id,
+      email: row.email,
+      displayName: row.display_name,
+      photoURL: null,
+      phoneNumber: row.phone || null,
+      emailVerified: true,
+    },
+    profile: {
+      uid: row.id,
+      displayName: row.display_name,
+      phone: row.phone,
+      email: row.email,
+      defaultAddress: row.default_address || '',
+      preferredOrderType: row.preferred_order_type || 'delivery',
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    },
+  };
+}
+
+async function createCustomerSession(env: Env, rid: string, customerId: string): Promise<string> {
+  const rawBytes = new Uint8Array(32);
+  crypto.getRandomValues(rawBytes);
+  const token = bytesToHex(rawBytes);
+  const tokenHash = await sha256Hex(token);
+  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+  await env.DB.prepare(
+    `INSERT INTO customer_sessions (id, restaurant_id, customer_id, expires_at)
+     VALUES (?, ?, ?, ?)`
+  )
+    .bind(tokenHash, rid, customerId, expiresAt)
+    .run();
+  return token;
+}
+
+function extractBearerToken(req: Request): string {
+  const auth = req.headers.get('Authorization') || '';
+  if (!auth.startsWith('Bearer ')) return '';
+  return auth.slice(7).trim();
+}
+
+async function authenticateCustomer(
+  req: Request,
+  env: Env,
+  rid: string
+): Promise<CustomerRow | null> {
+  const token = extractBearerToken(req);
+  if (!token) return null;
+  const tokenHash = await sha256Hex(token);
+  const row = await env.DB.prepare(
+    `SELECT c.*
+     FROM customer_sessions s
+     JOIN customers c ON c.id = s.customer_id
+     WHERE s.id = ? AND s.restaurant_id = ? AND c.restaurant_id = ? AND s.expires_at > ?
+     LIMIT 1`
+  )
+    .bind(tokenHash, rid, rid, new Date().toISOString())
+    .first<CustomerRow>();
+  return row ?? null;
+}
 
 function safeJsonParse<T>(raw: string | null | undefined, fallback: T): T {
   if (!raw) return fallback;
@@ -1014,34 +1161,67 @@ async function handle(req: Request, env: Env): Promise<Response> {
     const orderRef = `ZST-${datePart}-${uid().slice(0, 5).toUpperCase()}`;
     const customerNote = String(b.notes || '').trim().slice(0, 1000);
     const finalIdempotencyKey = idempotencyKey || orderId;
+    const authenticatedCustomer = await authenticateCustomer(req, env, rid).catch(() => null);
+    const orderColumnsRes = await env.DB.prepare(`PRAGMA table_info(orders)`).all<{ name: string }>();
+    const hasCustomerIdCol = (orderColumnsRes.results ?? []).some((c) => c.name === 'customer_id');
+
+    const insertOrderStmt = hasCustomerIdCol
+      ? env.DB.prepare(
+          `INSERT INTO orders (
+             id, restaurant_id, order_number, table_id, customer_id, customer_name, customer_phone,
+             delivery_address, order_type, status, subtotal_minor, discount_minor,
+             tax_minor, service_charge_minor, delivery_fee_minor, total_minor,
+             promo_code, customer_note, idempotency_key
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        ).bind(
+          orderId,
+          rid,
+          orderRef,
+          verifiedTable?.id ?? null,
+          authenticatedCustomer?.id ?? null,
+          name,
+          phone,
+          deliveryAddress,
+          type,
+          subtotalMinor,
+          discountMinor,
+          taxMinor,
+          serviceMinor,
+          deliveryFeeMinor,
+          totalMinor,
+          appliedPromoCode,
+          customerNote,
+          finalIdempotencyKey
+        )
+      : env.DB.prepare(
+          `INSERT INTO orders (
+             id, restaurant_id, order_number, table_id, customer_name, customer_phone,
+             delivery_address, order_type, status, subtotal_minor, discount_minor,
+             tax_minor, service_charge_minor, delivery_fee_minor, total_minor,
+             promo_code, customer_note, idempotency_key
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        ).bind(
+          orderId,
+          rid,
+          orderRef,
+          verifiedTable?.id ?? null,
+          name,
+          phone,
+          deliveryAddress,
+          type,
+          subtotalMinor,
+          discountMinor,
+          taxMinor,
+          serviceMinor,
+          deliveryFeeMinor,
+          totalMinor,
+          appliedPromoCode,
+          customerNote,
+          finalIdempotencyKey
+        );
 
     const batchStatements: D1PreparedStatement[] = [
-      env.DB.prepare(
-        `INSERT INTO orders (
-           id, restaurant_id, order_number, table_id, customer_name, customer_phone,
-           delivery_address, order_type, status, subtotal_minor, discount_minor,
-           tax_minor, service_charge_minor, delivery_fee_minor, total_minor,
-           promo_code, customer_note, idempotency_key
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-      ).bind(
-        orderId,
-        rid,
-        orderRef,
-        verifiedTable?.id ?? null,
-        name,
-        phone,
-        deliveryAddress,
-        type,
-        subtotalMinor,
-        discountMinor,
-        taxMinor,
-        serviceMinor,
-        deliveryFeeMinor,
-        totalMinor,
-        appliedPromoCode,
-        customerNote,
-        finalIdempotencyKey
-      ),
+      insertOrderStmt,
       ...verifiedItems.map((item) =>
         env.DB.prepare(
           `INSERT INTO order_items (
@@ -1109,6 +1289,215 @@ async function handle(req: Request, env: Env): Promise<Response> {
       origin,
       env
     );
+  }
+
+  if (p === '/api/customer/auth/signup' && req.method === 'POST') {
+    const b = ((await req.json().catch(() => ({}))) ?? {}) as Record<string, unknown>;
+    const email = String(b.email || '').trim().toLowerCase();
+    const password = String(b.password || '');
+    const displayName = String(b.name || b.displayName || '').trim().slice(0, 80);
+    const phone = String(b.phone || '').trim().slice(0, 40);
+    const defaultAddress = String(b.defaultAddress || '').trim().slice(0, 240);
+
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return json(err('Please enter a valid email address.', 'invalid-email'), 400, origin, env);
+    }
+    if (!displayName) {
+      return json(err('Full name is required.', 'invalid-name'), 400, origin, env);
+    }
+    if (password.length < 6) {
+      return json(
+        err('Password must be at least 6 characters.', 'weak-password'),
+        400,
+        origin,
+        env
+      );
+    }
+
+    const existing = await env.DB.prepare(
+      `SELECT id FROM customers WHERE restaurant_id = ? AND LOWER(email) = ? LIMIT 1`
+    )
+      .bind(rid, email)
+      .first<{ id: string }>();
+    if (existing) {
+      return json(
+        err('An account with this email already exists.', 'email-already-in-use'),
+        409,
+        origin,
+        env
+      );
+    }
+
+    const customerId = uid();
+    const passwordHash = await hashCustomerPassword(password);
+    await env.DB.prepare(
+      `INSERT INTO customers (
+         id, restaurant_id, email, password_hash, display_name, phone, default_address, preferred_order_type
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, 'delivery')`
+    )
+      .bind(customerId, rid, email, passwordHash, displayName, phone, defaultAddress)
+      .run();
+
+    const created = await env.DB.prepare(`SELECT * FROM customers WHERE id = ? LIMIT 1`)
+      .bind(customerId)
+      .first<CustomerRow>();
+    if (!created) {
+      return json(err('Unable to create account right now.'), 500, origin, env);
+    }
+
+    const token = await createCustomerSession(env, rid, customerId);
+    return json({ token, ...serializeCustomer(created), orders: [] }, 201, origin, env);
+  }
+
+  if (p === '/api/customer/auth/login' && req.method === 'POST') {
+    const b = ((await req.json().catch(() => ({}))) ?? {}) as Record<string, unknown>;
+    const email = String(b.email || '').trim().toLowerCase();
+    const password = String(b.password || '');
+
+    if (!email || !password) {
+      return json(
+        err('Email and password are required.', 'invalid-credential'),
+        400,
+        origin,
+        env
+      );
+    }
+
+    const customer = await env.DB.prepare(
+      `SELECT * FROM customers WHERE restaurant_id = ? AND LOWER(email) = ? LIMIT 1`
+    )
+      .bind(rid, email)
+      .first<CustomerRow>();
+
+    if (!customer || !(await verifyCustomerPassword(password, customer.password_hash))) {
+      return json(
+        err('Incorrect email or password.', 'invalid-credential'),
+        401,
+        origin,
+        env
+      );
+    }
+
+    const token = await createCustomerSession(env, rid, customer.id);
+    return json({ token, ...serializeCustomer(customer) }, 200, origin, env);
+  }
+
+  if (p === '/api/customer/auth/logout' && req.method === 'POST') {
+    const token = extractBearerToken(req);
+    if (token) {
+      const tokenHash = await sha256Hex(token);
+      await env.DB.prepare(
+        `DELETE FROM customer_sessions WHERE id = ? AND restaurant_id = ?`
+      )
+        .bind(tokenHash, rid)
+        .run();
+    }
+    return json({ ok: true }, 200, origin, env);
+  }
+
+  if (p === '/api/customer/me' && req.method === 'GET') {
+    const customer = await authenticateCustomer(req, env, rid);
+    if (!customer) {
+      return json(err('Unauthorized'), 401, origin, env);
+    }
+
+    const orderRows = await env.DB.prepare(
+      `SELECT o.id, o.order_number, o.order_type, o.status, o.subtotal_minor, o.discount_minor,
+              o.tax_minor, o.service_charge_minor, o.delivery_fee_minor, o.total_minor,
+              o.customer_name, o.customer_phone, o.delivery_address, o.promo_code,
+              o.customer_note, o.created_at, t.table_code
+       FROM orders o
+       LEFT JOIN restaurant_tables t ON t.id = o.table_id
+       WHERE o.restaurant_id = ? AND o.customer_id = ?
+       ORDER BY o.created_at DESC
+       LIMIT 50`
+    )
+      .bind(rid, customer.id)
+      .all<Record<string, unknown>>();
+
+    const orders = await Promise.all(
+      (orderRows.results ?? []).map(async (row) => {
+        const itemRows = await env.DB.prepare(
+          `SELECT id, menu_item_id, item_name_snapshot, quantity, unit_price_minor, line_total_minor, options_snapshot_json
+           FROM order_items WHERE order_id = ? AND restaurant_id = ?`
+        )
+          .bind(String(row.id), rid)
+          .all<Record<string, unknown>>();
+        return {
+          id: String(row.id),
+          orderRef: String(row.order_number),
+          orderType: String(row.order_type || 'delivery'),
+          status: mapDbOrderStatusToCustomer(String(row.status || 'pending')),
+          tableNumber: row.table_code
+            ? String(row.table_code).replace(/^T[-_]?/i, '') || String(row.table_code)
+            : '',
+          customerName: String(row.customer_name || ''),
+          customerPhone: String(row.customer_phone || ''),
+          deliveryAddress: String(row.delivery_address || ''),
+          subtotal: Number(row.subtotal_minor ?? 0) / 100,
+          discountAmount: Number(row.discount_minor ?? 0) / 100,
+          taxAmount: Number(row.tax_minor ?? 0) / 100,
+          serviceCharge: Number(row.service_charge_minor ?? 0) / 100,
+          deliveryFee: Number(row.delivery_fee_minor ?? 0) / 100,
+          total: Number(row.total_minor ?? 0) / 100,
+          promoCode: row.promo_code ? String(row.promo_code) : undefined,
+          notes: row.customer_note ? String(row.customer_note) : undefined,
+          createdAt: String(row.created_at || ''),
+          items: (itemRows.results ?? []).map((it) => {
+            const snap = safeJsonParse<Record<string, unknown>>(
+              it.options_snapshot_json ? String(it.options_snapshot_json) : null,
+              {}
+            );
+            return {
+              productId: String(it.menu_item_id || ''),
+              name: String(it.item_name_snapshot || ''),
+              quantity: Number(it.quantity ?? 1),
+              unitPrice: Number(it.unit_price_minor ?? 0) / 100,
+              lineTotal: Number(it.line_total_minor ?? 0) / 100,
+              variantLabel: snap.variantLabel ? String(snap.variantLabel) : undefined,
+              selectedSides: Array.isArray(snap.selectedSides) ? snap.selectedSides : [],
+              customisations: Array.isArray(snap.customisations) ? snap.customisations : [],
+              specialInstructions: snap.specialInstructions
+                ? String(snap.specialInstructions)
+                : undefined,
+            };
+          }),
+        };
+      })
+    );
+
+    return json({ ...serializeCustomer(customer), orders }, 200, origin, env);
+  }
+
+  if (p === '/api/customer/profile' && req.method === 'PATCH') {
+    const customer = await authenticateCustomer(req, env, rid);
+    if (!customer) {
+      return json(err('Unauthorized'), 401, origin, env);
+    }
+
+    const b = ((await req.json().catch(() => ({}))) ?? {}) as Record<string, unknown>;
+    const displayName = String(b.displayName ?? customer.display_name).trim().slice(0, 80);
+    const phone = String(b.phone ?? customer.phone).trim().slice(0, 40);
+    const defaultAddress = String(b.defaultAddress ?? customer.default_address).trim().slice(0, 240);
+    const rawType = String(b.preferredOrderType ?? customer.preferred_order_type);
+    const preferredOrderType =
+      rawType === 'dine_in' || rawType === 'takeaway' || rawType === 'delivery'
+        ? rawType
+        : 'delivery';
+
+    await env.DB.prepare(
+      `UPDATE customers
+       SET display_name = ?, phone = ?, default_address = ?, preferred_order_type = ?, updated_at = CURRENT_TIMESTAMP
+       WHERE id = ? AND restaurant_id = ?`
+    )
+      .bind(displayName || customer.display_name, phone, defaultAddress, preferredOrderType, customer.id, rid)
+      .run();
+
+    const updated = await env.DB.prepare(`SELECT * FROM customers WHERE id = ? LIMIT 1`)
+      .bind(customer.id)
+      .first<CustomerRow>();
+
+    return json(serializeCustomer(updated ?? customer), 200, origin, env);
   }
 
   return json(err('Not found'), 404, origin, env);
