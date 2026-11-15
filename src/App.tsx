@@ -38,7 +38,7 @@ import { PromotionsModule } from './modules/PromotionsModule';
 import { StaffModule } from './modules/StaffModule';
 import { SettingsModule } from './modules/SettingsModule';
 import { ReportsModule } from './modules/ReportsModule';
-import { AuthPage, ResetPasswordPage } from './modules/AuthPage';
+import { AuthPage, ResetPasswordPage, AcceptInvitationPage } from './modules/AuthPage';
 
 const EMPTY_HOMEPAGE_CONFIG: HomepageConfig = {
   heroImageKey: '',
@@ -399,6 +399,7 @@ export function App() {
   const incomingWaiterCallsCount = waiterCalls.filter((w) => w.status === 'Incoming').length;
 
   if (window.location.pathname === '/reset-password') return <ResetPasswordPage />;
+  if (window.location.pathname === '/accept-invitation') return <AcceptInvitationPage />;
 
   if (!authResolved && bootstrapping) {
     return <div className="flex min-h-screen items-center justify-center bg-[#F5F5F5] text-sm text-neutral-500">Loading ZESTRO Admin…</div>;
