@@ -1,4 +1,4 @@
--- Additive customer account schema. Existing guest orders remain valid.
+-- Additive customer account schema. Guest orders remain supported.
 CREATE TABLE IF NOT EXISTS customers (
  id TEXT PRIMARY KEY,
  restaurant_id TEXT NOT NULL REFERENCES restaurants(id) ON DELETE CASCADE,
@@ -24,5 +24,3 @@ CREATE TABLE IF NOT EXISTS customer_sessions (
 );
 CREATE INDEX IF NOT EXISTS idx_customer_sessions_customer_expiry ON customer_sessions(restaurant_id,customer_id,expires_at);
 CREATE INDEX IF NOT EXISTS idx_customer_sessions_expiry ON customer_sessions(expires_at);
-ALTER TABLE orders ADD COLUMN customer_id TEXT;
-CREATE INDEX IF NOT EXISTS idx_orders_customer_id ON orders(restaurant_id,customer_id,created_at DESC);
