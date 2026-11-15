@@ -526,7 +526,7 @@ function mapGalleryRow(row: Record<string, unknown>) {
 async function route(
   req: Request,
   env: Env,
-  options?: AdminWorkerOptions
+  ctx?: ExecutionContext
 ): Promise<Response> {
   const url = new URL(req.url);
   const path = url.pathname;
@@ -540,7 +540,7 @@ async function route(
   }
 
   if (path.startsWith('/api/auth/')) {
-    return handleAuthRequest(req, env);
+    return handleAuthRequest(req, env, ctx);
   }
 
   if (!path.startsWith('/api/')) return fail('Not found', 404);
@@ -2723,13 +2723,13 @@ async function route(
 
 export function createAdminHandler() {
   return {
-    async fetch(req: Request, env: Env): Promise<Response> {
+    async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
       const origin = req.headers.get('Origin');
       if (origin && !parseAllowedOrigins(env).includes(origin)) {
         return withCors(fail('Origin not allowed', 403), null, env);
       }
       try {
-        const res = await route(req, env);
+        const res = await route(req, env, ctx);
         return withCors(res, origin, env);
       } catch (error) {
         console.error('ZESTRO Admin API unhandled error:', error);
