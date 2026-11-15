@@ -54,13 +54,19 @@ export const onRequest: PagesFunction<Env> = async (context) => {
   headers.delete('origin');
 
   if (isAuthRoute) {
-    // Public auth methods may carry Better Auth cookies, but never forward
-    // Cloudflare Access credentials as proof of the Better Auth identity.
+    // Better Auth owns the app session; drop the legacy Access token.
     headers.delete('Cf-Access-Jwt-Assertion');
     headers.delete('cf-access-jwt-assertion');
   } else {
     headers.delete('cookie');
     headers.set('Cf-Access-Jwt-Assertion', assertion!);
+  }
+
+  // Forward only the Better Auth session cookie, not the Pages request's other
+  // cookies (e.g. Cloudflare Access) to the API origin.
+  if (isAuthRoute) {
+    const cookie = incoming.headers.get('cookie');
+    if (cookie) headers.set('cookie', cookie);
   }
 
   const init: RequestInit = { method: incoming.method, headers, redirect: 'manual' };
