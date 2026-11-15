@@ -172,7 +172,7 @@ describe('ZESTRO Production Functionality Repair — Full End-to-End Suite', () 
         let subject = '';
         const cookie = req.headers.get('cookie') || '';
         const sessionCookie = cookie.split(';').map((part) => part.trim())
-          .find((part) => /^(?:__Secure-|__Host-)?better-auth\\.session_token=/i.test(part));
+          .find((part) => /^(?:__Secure-|__Host-)?better-auth\.session_token=/i.test(part));
         if (sessionCookie) {
           subject = sessionCookie.slice(sessionCookie.indexOf('=') + 1);
         } else {
@@ -488,7 +488,7 @@ describe('ZESTRO Production Functionality Repair — Full End-to-End Suite', () 
         method: 'GET',
         headers: {
           Origin: 'https://zestro-admin.pages.dev',
-          Cookie: `CF_Authorization=${ownerAJwt}`,
+          Cookie: `better-auth.session_token=sub-owner-a`,
         },
       });
       const legitRes = await pagesProxyOnRequest({
