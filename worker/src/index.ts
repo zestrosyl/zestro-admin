@@ -2194,10 +2194,10 @@ async function route(
       return fail('You cannot remove your own currently signed-in account.', 400);
     }
     const target = await env.DB.prepare(
-      `SELECT id, role, display_name FROM memberships WHERE id = ? AND restaurant_id = ?`
+      `SELECT id, role, display_name, status FROM memberships WHERE id = ? AND restaurant_id = ?`
     )
       .bind(staffId, rid)
-      .first<{ id: string; role: string; display_name: string }>();
+      .first<{ id: string; role: string; display_name: string; status: string }>();
     if (!target) return fail('Team member not found', 404);
     if (target.role === 'owner' && member.role !== 'owner') {
       return fail('Only an owner can remove another owner.', 403);
@@ -2211,9 +2211,12 @@ async function route(
       if (!otherOwner) return fail('Cannot remove the last restaurant owner.', 400);
     }
 
-    await env.DB.prepare(`DELETE FROM memberships WHERE id = ? AND restaurant_id = ?`)
-      .bind(staffId, rid)
-      .run();
+    await env.DB.batch([
+      env.DB.prepare(`UPDATE auth_invitation_tokens SET revoked_at=CURRENT_TIMESTAMP
+        WHERE restaurant_id=? AND membership_id=? AND consumed_at IS NULL AND revoked_at IS NULL`).bind(rid,staffId),
+      env.DB.prepare(`UPDATE memberships SET status='disabled',auth_subject='revoked:'||id
+        WHERE id=? AND restaurant_id=?`).bind(staffId,rid),
+    ]);
     await audit(env, member, 'staff.deleted', 'membership', staffId, {
       name: target.display_name,
     });
