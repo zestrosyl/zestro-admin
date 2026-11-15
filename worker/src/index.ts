@@ -526,14 +526,25 @@ async function route(
     if (password.length < 12 || password.length > 128) return fail('Password must be between 12 and 128 characters.', 400);
     const invitation = await getInvitation(env, token);
     if (!invitation) return fail('Invitation is invalid, expired, revoked, or already used.', 400);
-    const existingUser = await env.DB.prepare('SELECT id FROM user WHERE lower(email) = lower(?) LIMIT 1')
-      .bind(invitation.email).first<{id:string}>();
-    if (existingUser) return fail('An account already exists for this email. Contact the restaurant owner to reissue the invitation.', 409);
-    if (!await reserveInvitation(env, invitation)) return fail('This invitation is already being accepted. Please retry shortly.', 409);
+    if (!await reserveInvitation(env, invitation)) return fail('This invitation is being accepted. Please retry after a few minutes.', 409);
+
+    // Resume only when this exact invitation already recorded the Better Auth
+    // user ID. An unrelated pre-existing account is never auto-linked by email.
     let authUserId = String(invitation.auth_user_id || '');
-    if (!authUserId) {
+    if (authUserId) {
+      const linkedUser = await env.DB.prepare(
+        'SELECT id FROM user WHERE id = ? AND lower(email) = lower(?) LIMIT 1'
+      ).bind(authUserId, invitation.email).first<{id:string}>();
+      if (!linkedUser) return fail('Invitation account link needs support recovery. No membership access was granted.', 503);
+    } else {
+      const existingUser = await env.DB.prepare(
+        'SELECT id FROM user WHERE lower(email) = lower(?) LIMIT 1'
+      ).bind(invitation.email).first<{id:string}>();
+      if (existingUser) return fail('An account already exists for this email. Contact the restaurant owner to issue a verified account-link invitation.', 409);
       try {
-        const created = await createInvitationAuthUser(env, { email: invitation.email, name: invitation.display_name, password });
+        const created = await createInvitationAuthUser(env, {
+          email: invitation.email, name: invitation.display_name, password
+        });
         authUserId = String((created as any)?.user?.id || (created as any)?.id || '');
         if (!authUserId) throw new Error('Better Auth did not return a user identity.');
       } catch (error) {
@@ -541,12 +552,13 @@ async function route(
         return fail('Unable to create the account. The invitation remains retryable; please try again.', 503);
       }
       if (!await attachAuthUserToInvitation(env, invitation, authUserId)) {
-        return fail('Account was created but the invitation could not be linked. Contact support before retrying.', 503);
+        return fail('Account was created but its invitation link could not be persisted. Support recovery is required; no access was granted.', 503);
       }
     }
+
     const latestInvitation = await getInvitation(env, token);
     if (!latestInvitation || !await activateInvitationMembership(env, latestInvitation, authUserId)) {
-      return fail('Account created but membership activation is pending support recovery. No access has been granted.', 503);
+      return fail('Account created but membership activation is pending recovery. No access has been granted.', 503);
     }
     return json({ ok: true, email: invitation.email });
   }
