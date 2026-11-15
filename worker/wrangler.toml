@@ -3,11 +3,15 @@ main = "src/index.ts"
 compatibility_date = "2026-11-15"
 workers_dev = true
 
-# Intentionally no production D1 or R2 bindings.
-# Add only a separately provisioned staging D1 database before testing.
+# Dedicated staging database only. This UUID is not the production D1 UUID.
+[[d1_databases]]
+binding = "DB"
+database_name = "zestro-auth-staging-20261115"
+database_id = "db949199-24f0-4c8c-8694-c06f59168d62"
+migrations_dir = "migrations"
+
+# The staging Worker serves the admin API. Media APIs are not part of auth validation.
 [vars]
 ALLOWED_ORIGINS = "https://zestro-admin.pages.dev"
-BETTER_AUTH_URL = "https://zestro-admin-api-auth-staging.<your-subdomain>.workers.dev"
+BETTER_AUTH_URL = "https://zestro-admin-api-auth-staging.zestro-syl.workers.dev"
 ADMIN_APP_URL = "https://zestro-admin.pages.dev"
-
-# No [[d1_databases]] and no [[r2_buckets]] by design.
