@@ -53,3 +53,31 @@ Reference: https://developers.cloudflare.com/d1/worker-api/d1-database/
 Development tests must use an isolated local D1 database / Miniflare state and fake email transport. Do not connect test code to the production D1 binding or send messages through production Resend.
 
 This document records design constraints only; it does not authorize or perform any production resource changes.
+
+## Current branch status (2026-11-15)
+
+### Implemented in this draft
+- Added Better Auth session and email/password configuration using the native D1 adapter.
+- Added a public, exact-path auth proxy allowlist and changed the Worker business API boundary to resolve Better Auth sessions to active tenant memberships on each request.
+- Added sign-in, request-password-reset, and reset-password UI.
+- Added invitation token hashing/reservation/activation primitives and an owner-link proof primitive. The helpers are not yet exposed as production HTTP workflows.
+- Removed the former production Access-JWT verification path from the Worker. The existing Access variables in Wrangler are now unused; edge Access policies have not been changed.
+- Preserved tenant and role checks in business route handlers; regression tests were adapted to accept an injected test-only identity resolver.
+
+### Explicitly incomplete — do not deploy or apply migration
+1. **Staff invitation acceptance is not wired.** There is no public accept-invitation endpoint, Better Auth credential creation flow, or invitation acceptance page. The standalone helpers are not sufficient to onboard staff.
+2. **Owner bootstrap is not operational.** A helper requires an independently verified one-time proof, but no secure operator proof-creation workflow exists. The old owner cannot be assumed linked by email equality.
+3. **D1 schema is not generated/validated against the pinned Better Auth version.** Compare with Better Auth's schema generator and run on isolated D1 only before merging.
+4. **Password-reset session cleanup has a partial-failure gap.** Password reset callback deletes session rows in a subsequent D1 statement. If that statement fails after the credential update, old sessions may remain. Build and test a recoverable cleanup/outbox path or an equivalent fail-closed recovery before production.
+5. **The test suite has not been run.** The revised test-only resolver preserves existing CRUD/RBAC coverage structure but is not a real Better Auth password/session end-to-end test.
+6. **Edge access policy remains unmodified.** The Admin Pages host must permit the login page without Cloudflare Access, and the Worker API hostname must be reachable so the Worker can enforce Better Auth. Verify this with dedicated staging hosts/policies before any production cutover.
+7. **Resend is not configured.** No Resend secrets were created. Invitation email helper and reset-email callback need an isolated fake transport test.
+
+### Production isolation actions
+- No D1 migration was applied, locally or remotely through this branch.
+- No Better Auth secret or Resend secret was added to Cloudflare.
+- No Worker deployment was requested.
+- No PR was merged.
+- The Pages project was found to auto-preview every branch. The branch was excluded from preview deployment triggers; previews that had already completed for earlier commits on this branch were deleted. The production branch and canonical production deployment were unchanged.
+
+**Review status:** draft implementation only. Do not promote or deploy until the incomplete items above are closed and reviewed.
