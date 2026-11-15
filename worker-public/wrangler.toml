@@ -16,3 +16,10 @@ database_id = "7062f9eb-889b-46c1-87f4-03270a50b5b8"
 [[r2_buckets]]
 binding = "MEDIA"
 bucket_name = "zestro-media"
+
+# Publishes customer-action events to the RestaurantRealtime Durable Object owned by
+# the zestro-admin-api Worker. Deploy zestro-admin-api first so the class exists.
+[[durable_objects.bindings]]
+name = "REALTIME"
+class_name = "RestaurantRealtime"
+script_name = "zestro-admin-api"

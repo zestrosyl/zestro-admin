@@ -2,6 +2,22 @@ import React from 'react';
 import { Menu, BellRing, Plus, Search, RefreshCw } from 'lucide-react';
 import { ModuleId } from '../../types';
 import { NAV_ITEMS } from './Sidebar';
+import type { RealtimeStatus } from '../../services/realtime';
+
+const REALTIME_LABEL: Record<RealtimeStatus, { text: string; dot: string; title: string }> = {
+  live: { text: 'Live', dot: 'bg-emerald-400', title: 'Live updates connected' },
+  connecting: { text: 'Connecting', dot: 'bg-amber-300 animate-pulse', title: 'Connecting to live updates' },
+  reconnecting: {
+    text: 'Reconnecting',
+    dot: 'bg-amber-300 animate-pulse',
+    title: 'Reconnecting to live updates · refreshing every 20s meanwhile',
+  },
+  offline: {
+    text: 'Offline',
+    dot: 'bg-rose-400',
+    title: 'Live updates unavailable · refreshing every 20s while retrying',
+  },
+};
 
 export const Header: React.FC<{
   activeModule: ModuleId;
@@ -14,6 +30,7 @@ export const Header: React.FC<{
   refreshing?: boolean;
   globalSearch: string;
   onGlobalSearchChange: (value: string) => void;
+  realtimeStatus?: RealtimeStatus;
 }> = ({
   activeModule,
   onOpenMobileMenu,
@@ -25,8 +42,10 @@ export const Header: React.FC<{
   refreshing = false,
   globalSearch,
   onGlobalSearchChange,
+  realtimeStatus,
 }) => {
   const current = NAV_ITEMS.find((i) => i.id === activeModule);
+  const live = realtimeStatus ? REALTIME_LABEL[realtimeStatus] : null;
 
   return (
     <header className="sticky top-0 z-30 flex items-center justify-between gap-4 border-b border-[#2C3D34] bg-[#101B17]/95 px-4 py-3.5 backdrop-blur-md sm:px-6">
@@ -50,6 +69,19 @@ export const Header: React.FC<{
       </div>
 
       <div className="flex items-center gap-2.5 sm:gap-3">
+        {live && (
+          <span
+            role="status"
+            aria-live="polite"
+            title={live.title}
+            data-testid="realtime-status"
+            className="inline-flex items-center gap-1.5 rounded-full border border-[#2C3D34] bg-[#1D2922] px-2.5 py-1 text-[11px] font-medium text-[#F3EBDD]/75"
+          >
+            <span className={`h-1.5 w-1.5 rounded-full ${live.dot}`} aria-hidden="true" />
+            <span className="hidden sm:inline">{live.text}</span>
+            <span className="sr-only sm:hidden">{live.text}</span>
+          </span>
+        )}
         <div className="relative hidden md:block">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#F3EBDD]/45" />
           <input

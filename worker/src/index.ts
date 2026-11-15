@@ -1,4 +1,11 @@
 import { createRemoteJWKSet, jwtVerify, type JWTVerifyGetKey } from 'jose';
+import {
+  publishRealtimeEvent,
+  realtimeStubFor,
+  type RealtimePublishInput,
+} from './realtime';
+
+export { RestaurantRealtime } from './realtime';
 
 export interface Env {
   DB: D1Database;
@@ -6,7 +13,11 @@ export interface Env {
   ACCESS_TEAM_DOMAIN: string;
   ACCESS_AUD: string;
   ALLOWED_ORIGINS: string;
+  /** Durable Object namespace for real-time Admin Dashboard updates (optional until deployed). */
+  REALTIME?: DurableObjectNamespace;
 }
+
+type WaitUntilContext = Pick<ExecutionContext, 'waitUntil'>;
 
 type DbRole = 'owner' | 'admin' | 'manager' | 'staff' | 'viewer';
 type UiStaffRole = 'Owner' | 'Manager' | 'Head Chef' | 'Server' | 'Host';
@@ -27,7 +38,7 @@ interface Member {
 }
 
 type AuthOutcome =
-  | { kind: 'ok'; member: Member }
+  | { kind: 'ok'; member: Member; tokenExp?: number }
   | { kind: 'unauthenticated'; message: string }
   | { kind: 'forbidden'; message: string };
 
@@ -186,6 +197,7 @@ async function authenticate(
 
   let subject = '';
   let email = '';
+  let tokenExp: number | undefined;
   try {
     const issuer = `https://${teamDomain}`;
     const keyOrSet = options?.keySetOverride ?? getCachedJwks(issuer);
@@ -195,6 +207,7 @@ async function authenticate(
     });
     subject = String(payload.sub || '').trim();
     email = String(payload.email || '').trim().toLowerCase();
+    tokenExp = typeof payload.exp === 'number' ? payload.exp : undefined;
     if (!subject || !email) {
       return { kind: 'unauthenticated', message: 'Invalid identity token claims' };
     }
@@ -293,7 +306,59 @@ async function authenticate(
     };
   }
 
-  return { kind: 'ok', member };
+  return { kind: 'ok', member, tokenExp };
+}
+
+/**
+ * Publish a real-time invalidation event after a successful D1 write.
+ * The restaurant ID always comes from the verified membership, never from the client.
+ */
+async function emitRealtime(
+  env: Env,
+  ctx: WaitUntilContext | undefined,
+  member: Member,
+  type: RealtimePublishInput['type'],
+  data: RealtimePublishInput['data']
+): Promise<void> {
+  const task = publishRealtimeEvent(env, {
+    type,
+    restaurantId: member.restaurant_id,
+    source: 'admin',
+    data,
+  });
+  if (ctx) ctx.waitUntil(task);
+  else await task;
+}
+
+/**
+ * `GET /api/realtime` (WebSocket upgrade): authenticate with the existing Cloudflare Access
+ * JWT + active membership check, then hand the socket to the restaurant's Durable Object.
+ */
+async function handleRealtimeConnect(
+  req: Request,
+  env: Env,
+  options?: AdminWorkerOptions
+): Promise<Response> {
+  if (req.method !== 'GET') return fail('Method not allowed', 405);
+  if ((req.headers.get('Upgrade') || '').toLowerCase() !== 'websocket') {
+    return fail('Expected WebSocket upgrade', 426);
+  }
+  if (!env.REALTIME) return fail('Real-time updates are not configured', 503);
+
+  const auth = await authenticate(req, env, options);
+  if (auth.kind === 'unauthenticated') return fail(auth.message, 401);
+  if (auth.kind === 'forbidden') return fail(auth.message, 403);
+
+  const { member, tokenExp } = auth;
+  const headers = new Headers({
+    Upgrade: 'websocket',
+    'X-Zestro-Restaurant-Id': member.restaurant_id,
+    'X-Zestro-Member-Id': member.id,
+  });
+  if (tokenExp) headers.set('X-Zestro-Token-Exp', String(tokenExp));
+
+  const stub = realtimeStubFor(env.REALTIME, member.restaurant_id);
+  return stub.fetch('https://realtime.internal/connect', { headers });
 }
 
 async function audit(
@@ -595,7 +660,8 @@ function mapGalleryRow(row: Record<string, unknown>) {
 async function route(
   req: Request,
   env: Env,
-  options?: AdminWorkerOptions
+  options?: AdminWorkerOptions,
+  ctx?: WaitUntilContext
 ): Promise<Response> {
   const url = new URL(req.url);
   const path = url.pathname;
@@ -1397,6 +1463,16 @@ async function route(
     }
 
     await env.DB.batch(statements);
+    await emitRealtime(env, ctx, member, 'order.created', {
+      orderId,
+      orderNumber,
+      orderType,
+      tableId: matchedTable?.id ?? null,
+      tableCode: matchedTable?.table_code ?? null,
+      status: 'Pending',
+      itemCount: verifiedLines.length,
+    });
+
     await audit(env, member, 'order.created', 'order', orderId, {
       orderNumber,
       orderType: rawOrderType,
@@ -1497,6 +1573,13 @@ async function route(
           .run();
       }
     }
+
+    await emitRealtime(env, ctx, member, 'order.updated', {
+      orderId,
+      orderNumber: existing.order_number,
+      tableId: existing.table_id,
+      status: dbStatus,
+    });
 
     await audit(env, member, 'order.status.updated', 'order', orderId, {
       orderNumber: existing.order_number,
@@ -1600,6 +1683,12 @@ async function route(
       .bind(tableId, rid, number, zone, capacity, dbStatus)
       .run();
 
+    await emitRealtime(env, ctx, member, 'table.created', {
+      tableId,
+      tableCode: number,
+      status: dbStatus,
+    });
+
     await audit(env, member, 'table.created', 'restaurant_table', tableId, { number });
     return json(
       {
@@ -1683,6 +1772,12 @@ async function route(
       )
       .run();
 
+    await emitRealtime(env, ctx, member, 'table.updated', {
+      tableId,
+      tableCode: newNumber,
+      status: nextStatus,
+    });
+
     await audit(env, member, 'table.updated', 'restaurant_table', tableId);
     return json({ ok: true });
   }
@@ -1696,6 +1791,7 @@ async function route(
       .bind(tableId, rid)
       .run();
     if (!result.meta.changes) return fail('Table not found', 404);
+    await emitRealtime(env, ctx, member, 'table.deleted', { tableId });
     await audit(env, member, 'table.deleted', 'restaurant_table', tableId);
     return json({ ok: true });
   }
@@ -1773,6 +1869,14 @@ async function route(
       .bind(callId, rid, table.id, requestType, note)
       .run();
 
+    await emitRealtime(env, ctx, member, 'waiter_call.created', {
+      callId,
+      tableId: table.id,
+      tableCode: table.table_code,
+      requestType,
+      status: 'incoming',
+    });
+
     await audit(env, member, 'waiter_call.created', 'waiter_call', callId, {
       tableNumber: table.table_code,
     });
@@ -1815,6 +1919,11 @@ async function route(
       .bind(dbStatus, dbStatus, member.id, dbStatus, callId, rid)
       .run();
     if (!result.meta.changes) return fail('Waiter call not found', 404);
+
+    await emitRealtime(env, ctx, member, 'waiter_call.updated', {
+      callId,
+      status: dbStatus,
+    });
 
     await audit(env, member, 'waiter_call.status.updated', 'waiter_call', callId, {
       status: dbStatus,
@@ -2685,13 +2794,18 @@ async function route(
 
 export function createAdminHandler(options?: AdminWorkerOptions) {
   return {
-    async fetch(req: Request, env: Env): Promise<Response> {
+    async fetch(req: Request, env: Env, ctx?: ExecutionContext): Promise<Response> {
       const origin = req.headers.get('Origin');
       if (origin && !parseAllowedOrigins(env).includes(origin)) {
         return withCors(fail('Origin not allowed', 403), null, env);
       }
       try {
-        const res = await route(req, env, options);
+        if (new URL(req.url).pathname === '/api/realtime') {
+          const res = await handleRealtimeConnect(req, env, options);
+          // A 101 Switching Protocols response must be returned untouched (no CORS rewrap).
+          return res.status === 101 ? res : withCors(res, origin, env);
+        }
+        const res = await route(req, env, options, ctx);
         return withCors(res, origin, env);
       } catch (error) {
         console.error('ZESTRO Admin API unhandled error:', error);

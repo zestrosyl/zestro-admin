@@ -27,6 +27,26 @@ export const onRequest: PagesFunction<Env> = async (context) => {
   }
 
   const incomingOrigin = incoming.headers.get('Origin');
+  const isWebSocketUpgrade =
+    (incoming.headers.get('Upgrade') || '').toLowerCase() === 'websocket';
+
+  // Real-time channel: only same-origin WebSocket upgrades to /api/realtime are proxied.
+  // Browsers always send Origin on WebSocket handshakes, so this blocks cross-site
+  // WebSocket hijacking that would otherwise ride on the CF_Authorization cookie.
+  if (isWebSocketUpgrade) {
+    if (
+      incoming.method !== 'GET' ||
+      incomingUrl.pathname !== '/api/realtime' ||
+      !incomingOrigin ||
+      incomingOrigin !== incomingUrl.origin
+    ) {
+      return Response.json(
+        { error: 'Forbidden WebSocket request.' },
+        { status: 403, headers: { 'cache-control': 'no-store' } }
+      );
+    }
+  }
+
   if (
     incoming.method !== 'GET' &&
     incoming.method !== 'HEAD' &&
@@ -70,6 +90,16 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
   try {
     const upstream = await fetch(target.toString(), init);
+
+    if (isWebSocketUpgrade) {
+      // 101 responses carry the upstream WebSocket and must be returned as-is.
+      if (upstream.status === 101) return upstream;
+      return new Response(upstream.body, {
+        status: upstream.status,
+        headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
+      });
+    }
+
     const responseHeaders = new Headers(upstream.headers);
     responseHeaders.delete('access-control-allow-origin');
     responseHeaders.delete('access-control-allow-credentials');

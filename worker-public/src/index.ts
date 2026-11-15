@@ -4,6 +4,46 @@ export interface Env {
   RESTAURANT_ID: string;
   ALLOWED_ORIGINS: string;
   WHATSAPP_NUMBER: string;
+  /**
+   * Durable Object namespace `RestaurantRealtime` owned by the `zestro-admin-api` script.
+   * Optional: when absent, customer actions still work and Admin falls back to polling.
+   */
+  REALTIME?: DurableObjectNamespace;
+}
+
+type WaitUntilContext = Pick<ExecutionContext, 'waitUntil'>;
+
+type CustomerRealtimeEventType = 'order.created' | 'waiter_call.created';
+
+/**
+ * Notify connected Admin Dashboards for this restaurant. Only call AFTER the D1 write resolved.
+ * Payload is limited to non-personal identifiers (no name, phone, address or notes).
+ * Never throws and never affects the customer response.
+ */
+function publishRealtime(
+  env: Env,
+  ctx: WaitUntilContext | undefined,
+  restaurantId: string,
+  type: CustomerRealtimeEventType,
+  data: Record<string, string | number | boolean | null>
+): Promise<void> | void {
+  if (!env.REALTIME || !restaurantId) return;
+  const task = (async () => {
+    try {
+      const ns = env.REALTIME as DurableObjectNamespace;
+      const stub = ns.get(ns.idFromName(`restaurant:${restaurantId}`));
+      const res = await stub.fetch('https://realtime.internal/publish', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ type, restaurantId, source: 'customer', data }),
+      });
+      if (!res.ok) console.error('ZESTRO realtime publish rejected:', res.status);
+    } catch (error) {
+      console.error('ZESTRO realtime publish failed:', error);
+    }
+  })();
+  if (ctx) ctx.waitUntil(task);
+  else return task;
 }
 
 interface RestaurantRow {
@@ -174,7 +214,7 @@ function mapDbOrderStatusToCustomer(status: string): string {
   }
 }
 
-async function handle(req: Request, env: Env): Promise<Response> {
+async function handle(req: Request, env: Env, ctx?: WaitUntilContext): Promise<Response> {
   const origin = req.headers.get('Origin');
   if (req.method === 'OPTIONS') {
     const h = new Headers({
@@ -526,6 +566,14 @@ async function handle(req: Request, env: Env): Promise<Response> {
     )
       .bind(callId, rid, table.id, requestType, note)
       .run();
+
+    await publishRealtime(env, ctx, rid, 'waiter_call.created', {
+      callId,
+      tableId: table.id,
+      tableCode: table.table_code,
+      requestType,
+      status: 'incoming',
+    });
 
     return json(
       {
@@ -1034,6 +1082,16 @@ async function handle(req: Request, env: Env): Promise<Response> {
 
     await env.DB.batch(batchStatements);
 
+    await publishRealtime(env, ctx, rid, 'order.created', {
+      orderId,
+      orderNumber: orderRef,
+      orderType: type,
+      tableId: verifiedTable?.id ?? null,
+      tableCode: verifiedTable?.table_code ?? null,
+      status: 'Pending',
+      itemCount: verifiedItems.length,
+    });
+
     return json(
       {
         orderId,
@@ -1069,14 +1127,14 @@ async function handle(req: Request, env: Env): Promise<Response> {
 }
 
 export default {
-  async fetch(req: Request, env: Env): Promise<Response> {
+  async fetch(req: Request, env: Env, ctx?: ExecutionContext): Promise<Response> {
     const origin = req.headers.get('Origin');
     const allowed = parseAllowedOrigins(env);
     if (origin && !allowed.includes(origin)) {
       return json({ error: 'Origin not allowed' }, 403, origin, env);
     }
     try {
-      return await handle(req, env);
+      return await handle(req, env, ctx);
     } catch (e) {
       console.error('ZESTRO public API error:', e);
       return json({ error: 'Internal server error' }, 500, origin, env);
