@@ -75,6 +75,7 @@ describe('ZESTRO Supabase staff authentication — isolated D1 integration', () 
       email,
       email_confirmed_at: new Date().toISOString(),
       confirmed_at: new Date().toISOString(),
+      authAllowed: aud === 'authenticated',
     });
     return token;
   }
@@ -136,12 +137,14 @@ describe('ZESTRO Supabase staff authentication — isolated D1 integration', () 
         const headers = new Headers(init?.headers || (input instanceof Request ? input.headers : undefined));
         const bearer = (headers.get('Authorization') || '').replace(/^Bearer\s+/i, '');
         const user = confirmedUsers.get(bearer);
-        return user
-          ? new Response(JSON.stringify(user), {
+        if (user?.authAllowed) {
+          const { authAllowed: _authAllowed, ...authUser } = user;
+          return new Response(JSON.stringify(authUser), {
               status: 200,
               headers: { 'content-type': 'application/json' },
-            })
-          : new Response(JSON.stringify({ message: 'Invalid token' }), { status: 401 });
+          });
+        }
+        return new Response(JSON.stringify({ message: 'Invalid token' }), { status: 401 });
       }
 
       return originalFetch(input, init);
