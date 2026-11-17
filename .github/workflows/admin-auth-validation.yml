@@ -19,7 +19,9 @@ jobs:
         with:
           repository: zestrosyl/zestro-customer-website-
           ref: live-backend/nov-14-2026
-          path: ../zestro-customer
+          path: zestro-customer
+      - name: Expose customer source at the path used by cross-repository tests
+        run: ln -s "$GITHUB_WORKSPACE/zestro-customer" "$GITHUB_WORKSPACE/../zestro-customer"
       - uses: actions/setup-node@v4
         with:
           node-version: 22
