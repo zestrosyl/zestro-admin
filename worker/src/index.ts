@@ -265,9 +265,35 @@ async function authenticateWithSupabase(req: Request, env: Env): Promise<AuthOut
       WHEN 'manager' THEN 3 WHEN 'staff' THEN 4 ELSE 5 END,
       m.created_at ASC LIMIT 1
   `;
-  const member = requestedRestaurantId
+  let member = requestedRestaurantId
     ? await env.DB.prepare(baseSelect + " WHERE m.restaurant_id = ? AND m.supabase_user_id = ? AND m.status = 'active' AND r.status = 'active' LIMIT 1").bind(requestedRestaurantId, identity.userId).first<Member>()
     : await env.DB.prepare(baseSelect + " WHERE m.supabase_user_id = ? AND m.status = 'active' AND r.status = 'active' " + order).bind(identity.userId).first<Member>();
+
+  // A pre-created D1 invitation may be claimed without Cloudflare Access only
+  // after Supabase confirms control of the exact invited email address.
+  if (!member) {
+    const confirmedUser = await getConfirmedSupabaseUser(req, env);
+    if (
+      confirmedUser?.emailConfirmed &&
+      confirmedUser.id === identity.userId &&
+      confirmedUser.email === identity.email
+    ) {
+      const inviteUpdate = requestedRestaurantId
+        ? await env.DB.prepare(
+            "UPDATE memberships SET supabase_user_id = ?, status = 'active' WHERE restaurant_id = ? AND lower(email) = ? AND status = 'invited' AND auth_subject LIKE 'invited:%' AND (supabase_user_id IS NULL OR supabase_user_id = ?)"
+          ).bind(identity.userId, requestedRestaurantId, confirmedUser.email, identity.userId).run()
+        : await env.DB.prepare(
+            "UPDATE memberships SET supabase_user_id = ?, status = 'active' WHERE lower(email) = ? AND status = 'invited' AND auth_subject LIKE 'invited:%' AND (supabase_user_id IS NULL OR supabase_user_id = ?)"
+          ).bind(identity.userId, confirmedUser.email, identity.userId).run();
+
+      if (Number(inviteUpdate.meta.changes || 0) > 0) {
+        member = requestedRestaurantId
+          ? await env.DB.prepare(baseSelect + " WHERE m.restaurant_id = ? AND m.supabase_user_id = ? AND m.status = 'active' AND r.status = 'active' LIMIT 1").bind(requestedRestaurantId, identity.userId).first<Member>()
+          : await env.DB.prepare(baseSelect + " WHERE m.supabase_user_id = ? AND m.status = 'active' AND r.status = 'active' " + order).bind(identity.userId).first<Member>();
+      }
+    }
+  }
+
   if (!member) {
     const anyMembership = await env.DB.prepare("SELECT m.id FROM memberships m JOIN restaurants r ON r.id = m.restaurant_id WHERE m.supabase_user_id = ? AND m.status = 'active' AND r.status = 'active' LIMIT 1").bind(identity.userId).first();
     return { kind: 'forbidden', message: anyMembership ? 'Access denied for the requested restaurant tenant' : 'Your Supabase account is not linked to an active ZESTRO staff membership.' };
