@@ -1,6 +1,9 @@
 name: Deploy ZESTRO Admin Auth Staging
 
 on:
+  push:
+    branches:
+      - feat/supabase-auth-integration-2026-11-17
   workflow_dispatch:
 
 permissions:
@@ -21,6 +24,12 @@ jobs:
       - name: Typecheck Worker
         working-directory: worker
         run: npm run typecheck
+      - name: Run Worker regression and Supabase auth integration tests
+        working-directory: worker
+        run: npm test
+      - name: Validate staging Wrangler bundle
+        working-directory: worker
+        run: npx wrangler deploy --dry-run --env staging
       - name: Deploy isolated staging Worker
         working-directory: worker
         env:
