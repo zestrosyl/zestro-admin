@@ -36,6 +36,9 @@ jobs:
         run: npm --prefix worker install --ignore-scripts
       - name: Typecheck admin Worker
         run: npm run typecheck:api
+      - name: Validate staging Wrangler bundle
+        working-directory: worker
+        run: npx wrangler deploy --dry-run --env staging
       - name: Run Worker tests
         run: npm test
       - name: Commit generated root lockfile
