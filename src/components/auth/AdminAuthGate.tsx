@@ -91,8 +91,40 @@ export function AdminAuthGate({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!authReady || !session || !supabaseClient || mode === 'reset') { setLinked(false); setLinking(false); return; }
     let active = true; setLinking(true); setLinked(false); setLinkError('');
-    void fetch('/api/auth/link-supabase', { method: 'POST', credentials: 'same-origin', headers: { Authorization: 'Bearer ' + session.access_token } })
-      .then(async (response) => { const body = await response.json().catch(() => ({} as { error?: string })); if (!response.ok) throw new Error(body.error || 'Staff access check failed (' + response.status + ')'); if (active) setLinked(true); })
+    const bearerHeaders = { Authorization: 'Bearer ' + session.access_token };
+    void (async () => {
+      const linkResponse = await fetch('/api/auth/link-supabase', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: bearerHeaders,
+      });
+
+      if (linkResponse.ok) {
+        if (active) setLinked(true);
+        return;
+      }
+
+      const linkBody = await linkResponse.json().catch(() => ({} as { error?: string }));
+
+      // The one-time link endpoint intentionally needs Cloudflare Access. If this
+      // membership was linked on an earlier session, verify it using the normal
+      // Supabase-authenticated /api/me endpoint instead.
+      if (linkResponse.status === 401) {
+        const meResponse = await fetch('/api/me', {
+          method: 'GET',
+          credentials: 'same-origin',
+          headers: bearerHeaders,
+        });
+        if (meResponse.ok) {
+          if (active) setLinked(true);
+          return;
+        }
+        const meBody = await meResponse.json().catch(() => ({} as { error?: string }));
+        throw new Error(meBody.error || linkBody.error || 'Staff membership is not linked to this Supabase account.');
+      }
+
+      throw new Error(linkBody.error || 'Staff access check failed (' + linkResponse.status + ')');
+    })()
       .catch((err) => { if (active) setLinkError(err instanceof Error ? err.message : 'Unable to verify staff access.'); })
       .finally(() => { if (active) setLinking(false); });
     return () => { active = false; };
