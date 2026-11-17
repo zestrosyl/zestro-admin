@@ -64,6 +64,7 @@ function AuthCard({ mode, setMode }: { mode: AuthMode; setMode: (mode: AuthMode)
 }
 
 export function AdminAuthGate({ children }: { children: React.ReactNode }) {
+  const supabaseClient = supabase;
   const [session, setSession] = useState<Session | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [linking, setLinking] = useState(false);
@@ -71,15 +72,15 @@ export function AdminAuthGate({ children }: { children: React.ReactNode }) {
   const [linkError, setLinkError] = useState('');
   const [mode, setMode] = useState<AuthMode>('signin');
   useEffect(() => {
-    if (!supabase) { setAuthReady(true); return; }
+    if (!supabaseClient) { setAuthReady(true); return; }
     let active = true;
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, nextSession) => {
+    const { data: { subscription } } = supabaseClient.auth.onAuthStateChange((event, nextSession) => {
       if (!active) return;
       setSession(nextSession);
       if (event === 'PASSWORD_RECOVERY') setMode('reset');
       if (event === 'SIGNED_OUT') { setLinked(false); setLinkError(''); }
     });
-    void supabase.auth.getSession().then(({ data, error }) => {
+    void supabaseClient.auth.getSession().then(({ data, error }) => {
       if (!active) return;
       if (error) setLinkError(error.message);
       setSession(data.session);
@@ -88,7 +89,7 @@ export function AdminAuthGate({ children }: { children: React.ReactNode }) {
     return () => { active = false; subscription.unsubscribe(); };
   }, []);
   useEffect(() => {
-    if (!authReady || !session || !supabase || mode === 'reset') { setLinked(false); setLinking(false); return; }
+    if (!authReady || !session || !supabaseClient || mode === 'reset') { setLinked(false); setLinking(false); return; }
     let active = true; setLinking(true); setLinked(false); setLinkError('');
     void fetch('/api/auth/link-supabase', { method: 'POST', credentials: 'same-origin', headers: { Authorization: 'Bearer ' + session.access_token } })
       .then(async (response) => { const body = await response.json().catch(() => ({} as { error?: string })); if (!response.ok) throw new Error(body.error || 'Staff access check failed (' + response.status + ')'); if (active) setLinked(true); })
@@ -96,11 +97,11 @@ export function AdminAuthGate({ children }: { children: React.ReactNode }) {
       .finally(() => { if (active) setLinking(false); });
     return () => { active = false; };
   }, [authReady, session?.access_token, session?.user.id, mode]);
-  if (!supabase) return <div className="min-h-screen bg-slate-50 p-8 flex items-center justify-center"><div className="max-w-xl rounded-xl border border-amber-200 bg-white p-6 text-sm text-slate-700 shadow"><strong>Supabase is not configured for this deployment.</strong><p className="mt-2">Set VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY in Cloudflare Pages, then rebuild this branch.</p></div></div>;
+  if (!supabaseClient) return <div className="min-h-screen bg-slate-50 p-8 flex items-center justify-center"><div className="max-w-xl rounded-xl border border-amber-200 bg-white p-6 text-sm text-slate-700 shadow"><strong>Supabase is not configured for this deployment.</strong><p className="mt-2">Set VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY in Cloudflare Pages, then rebuild this branch.</p></div></div>;
   if (!authReady || (session && (linking || (!linked && !linkError)))) return <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center gap-3 text-slate-600"><Loader2 className="h-8 w-8 animate-spin text-emerald-700" /><p className="text-sm">{linking ? 'Verifying your ZESTRO staff membership…' : 'Restoring secure session…'}</p></div>;
   if (!session) return <AuthCard mode={mode} setMode={setMode} />;
   if (mode === 'reset') return <AuthCard mode={mode} setMode={setMode} />;
-  if (linkError) return <div className="min-h-screen bg-slate-50 p-6 flex items-center justify-center"><div className="w-full max-w-xl rounded-2xl border border-rose-200 bg-white p-7 shadow-xl"><div className="flex items-center gap-3 text-rose-700"><LockKeyhole className="h-6 w-6" /><h1 className="text-xl font-bold text-slate-900">Staff access not linked</h1></div><p className="mt-3 text-sm text-slate-700">{linkError}</p><p className="mt-3 text-xs text-slate-500">Use the same verified work email as your existing Cloudflare Access and ZESTRO staff membership. If you are a new staff member, an owner must create your D1 membership first.</p><button type="button" onClick={() => void supabase.auth.signOut()} className="mt-6 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white">Sign out</button></div></div>;
+  if (linkError) return <div className="min-h-screen bg-slate-50 p-6 flex items-center justify-center"><div className="w-full max-w-xl rounded-2xl border border-rose-200 bg-white p-7 shadow-xl"><div className="flex items-center gap-3 text-rose-700"><LockKeyhole className="h-6 w-6" /><h1 className="text-xl font-bold text-slate-900">Staff access not linked</h1></div><p className="mt-3 text-sm text-slate-700">{linkError}</p><p className="mt-3 text-xs text-slate-500">Use the same verified work email as your existing Cloudflare Access and ZESTRO staff membership. If you are a new staff member, an owner must create your D1 membership first.</p><button type="button" onClick={() => void supabaseClient.auth.signOut()} className="mt-6 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white">Sign out</button></div></div>;
   if (!linked) return null;
-  return <><>{children}</><button type="button" onClick={() => void supabase.auth.signOut()} className="fixed right-4 top-3 z-[80] rounded-lg border border-slate-200 bg-white/95 px-3 py-2 text-xs font-semibold text-slate-700 shadow hover:bg-slate-50">Sign out</button></>;
+  return <><>{children}</><button type="button" onClick={() => void supabaseClient.auth.signOut()} className="fixed right-4 top-3 z-[80] rounded-lg border border-slate-200 bg-white/95 px-3 py-2 text-xs font-semibold text-slate-700 shadow hover:bg-slate-50">Sign out</button></>;
 }
