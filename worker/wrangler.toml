@@ -17,3 +17,25 @@ migrations_dir = "migrations"
 [[r2_buckets]]
 binding = "MEDIA"
 bucket_name = "zestro-media"
+
+[env.staging]
+name = "zestro-admin-api-auth-staging"
+workers_dev = true
+
+[env.staging.vars]
+ALLOWED_ORIGINS = "https://feat-supabase-auth-integration-2026-11-17.zestro-admin.pages.dev,http://localhost:5173"
+ACCESS_TEAM_DOMAIN = "icy-wave-d29d.cloudflareaccess.com"
+ACCESS_AUD = "f8f77ba37572eeff2d28993fa9d1eadb913fc3a6b4f7dd957c954038eb51e65c"
+SUPABASE_URL = "https://nwpwatonkvwrcjkfmtsm.supabase.co"
+SUPABASE_PUBLISHABLE_KEY = "sb_publishable_v4Jlaqb4ED3lROtq1ibpWw_PepyoohV"
+REQUIRE_SUPABASE_AUTH = "true"
+
+[[env.staging.d1_databases]]
+binding = "DB"
+database_name = "zestro-auth-staging-20261115"
+database_id = "db949199-24f0-4c8c-8694-c06f59168d62"
+migrations_dir = "migrations"
+
+[[env.staging.r2_buckets]]
+binding = "MEDIA"
+bucket_name = "zestro-media-staging-20261117"

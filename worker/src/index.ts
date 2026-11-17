@@ -6,6 +6,9 @@ export interface Env {
   ACCESS_TEAM_DOMAIN: string;
   ACCESS_AUD: string;
   ALLOWED_ORIGINS: string;
+  SUPABASE_URL?: string;
+  SUPABASE_PUBLISHABLE_KEY?: string;
+  REQUIRE_SUPABASE_AUTH?: string;
 }
 
 type DbRole = 'owner' | 'admin' | 'manager' | 'staff' | 'viewer';
@@ -15,6 +18,7 @@ interface Member {
   id: string;
   restaurant_id: string;
   auth_subject: string;
+  supabase_user_id?: string | null;
   email: string;
   display_name: string;
   role: DbRole;
@@ -75,7 +79,7 @@ function withCors(response: Response, origin: string | null, env: Env): Response
   headers.set('access-control-allow-methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
   headers.set(
     'access-control-allow-headers',
-    'Content-Type,X-Restaurant-Id,x-file-name,x-title,x-folder,x-dimensions'
+    'Content-Type,Authorization,X-Restaurant-Id,x-file-name,x-title,x-folder,x-dimensions'
   );
   headers.set('x-content-type-options', 'nosniff');
   headers.set('referrer-policy', 'strict-origin-when-cross-origin');
@@ -169,6 +173,107 @@ const canManage = (m: Member): boolean =>
 const canManageStaff = (m: Member): boolean =>
   ['owner', 'admin'].includes(m.role);
 
+interface SupabaseIdentity {
+  userId: string;
+  email: string;
+}
+
+function getSupabaseJwks(issuer: string): ReturnType<typeof createRemoteJWKSet> {
+  const cacheKey = 'supabase:' + issuer;
+  let cached = jwksCache.get(cacheKey);
+  if (!cached) {
+    cached = createRemoteJWKSet(new URL(issuer + '/.well-known/jwks.json'));
+    jwksCache.set(cacheKey, cached);
+  }
+  return cached;
+}
+
+function getBearerToken(req: Request): string | null {
+  const header = req.headers.get('Authorization') || '';
+  const match = header.match(/^Bearer\s+(.+)$/i);
+  return match?.[1]?.trim() || null;
+}
+
+// Verify asymmetric Supabase JWTs with JWKS. For legacy HS256 projects,
+// fall back to the Auth /user endpoint; never trust a decoded JWT alone.
+async function verifySupabaseAccessToken(req: Request, env: Env): Promise<SupabaseIdentity | null> {
+  const token = getBearerToken(req);
+  const baseUrl = String(env.SUPABASE_URL || '').trim().replace(/\/+$/, '');
+  if (!token || !baseUrl) return null;
+  const issuer = baseUrl + '/auth/v1';
+  try {
+    const { payload } = await jwtVerify(token, getSupabaseJwks(issuer), {
+      issuer,
+      audience: 'authenticated',
+    });
+    const userId = String(payload.sub || '').trim();
+    const email = String(payload.email || '').trim().toLowerCase();
+    if (userId) return { userId, email };
+  } catch {
+    // Continue to the Auth server fallback, which fails closed if the token is invalid.
+  }
+  if (!env.SUPABASE_PUBLISHABLE_KEY) return null;
+  try {
+    const response = await fetch(issuer + '/user', {
+      headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY, Authorization: 'Bearer ' + token },
+    });
+    if (!response.ok) return null;
+    const user = await response.json() as { id?: string; email?: string };
+    const userId = String(user.id || '').trim();
+    const email = String(user.email || '').trim().toLowerCase();
+    return userId ? { userId, email } : null;
+  } catch {
+    return null;
+  }
+}
+
+async function getConfirmedSupabaseUser(req: Request, env: Env): Promise<{ id: string; email: string; emailConfirmed: boolean } | null> {
+  const token = getBearerToken(req);
+  const baseUrl = String(env.SUPABASE_URL || '').trim().replace(/\/+$/, '');
+  if (!token || !baseUrl || !env.SUPABASE_PUBLISHABLE_KEY) return null;
+  try {
+    const response = await fetch(baseUrl + '/auth/v1/user', {
+      headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY, Authorization: 'Bearer ' + token },
+    });
+    if (!response.ok) return null;
+    const user = await response.json() as { id?: string; email?: string; email_confirmed_at?: string | null; confirmed_at?: string | null };
+    const id = String(user.id || '').trim();
+    const email = String(user.email || '').trim().toLowerCase();
+    return id && email ? { id, email, emailConfirmed: Boolean(user.email_confirmed_at || user.confirmed_at) } : null;
+  } catch {
+    return null;
+  }
+}
+
+async function authenticateWithSupabase(req: Request, env: Env): Promise<AuthOutcome> {
+  const identity = await verifySupabaseAccessToken(req, env);
+  if (!identity) return { kind: 'unauthenticated', message: 'Invalid or expired Supabase session' };
+  const url = new URL(req.url);
+  const requestedRestaurantId = (req.headers.get('X-Restaurant-Id') || url.searchParams.get('restaurantId') || '').trim();
+  const baseSelect = `
+    SELECT
+      m.id, m.restaurant_id, m.auth_subject, m.email, m.display_name, m.role,
+      COALESCE(m.job_title, '') AS job_title,
+      r.name AS restaurant_name, r.slug AS restaurant_slug,
+      r.currency AS restaurant_currency, r.timezone AS restaurant_timezone,
+      r.status AS restaurant_status
+    FROM memberships m
+    JOIN restaurants r ON r.id = m.restaurant_id
+  `;
+  const order = `
+    ORDER BY CASE m.role WHEN 'owner' THEN 1 WHEN 'admin' THEN 2
+      WHEN 'manager' THEN 3 WHEN 'staff' THEN 4 ELSE 5 END,
+      m.created_at ASC LIMIT 1
+  `;
+  const member = requestedRestaurantId
+    ? await env.DB.prepare(baseSelect + " WHERE m.restaurant_id = ? AND m.supabase_user_id = ? AND m.status = 'active' AND r.status = 'active' LIMIT 1").bind(requestedRestaurantId, identity.userId).first<Member>()
+    : await env.DB.prepare(baseSelect + " WHERE m.supabase_user_id = ? AND m.status = 'active' AND r.status = 'active' " + order).bind(identity.userId).first<Member>();
+  if (!member) {
+    const anyMembership = await env.DB.prepare("SELECT m.id FROM memberships m JOIN restaurants r ON r.id = m.restaurant_id WHERE m.supabase_user_id = ? AND m.status = 'active' AND r.status = 'active' LIMIT 1").bind(identity.userId).first();
+    return { kind: 'forbidden', message: anyMembership ? 'Access denied for the requested restaurant tenant' : 'Your Supabase account is not linked to an active ZESTRO staff membership.' };
+  }
+  return { kind: 'ok', member };
+}
 async function authenticate(
   req: Request,
   env: Env,
@@ -668,7 +773,32 @@ async function route(
     return fail('Not found', 404);
   }
 
-  const auth = await authenticate(req, env, options);
+  // One-time link: require an existing, verified Cloudflare Access membership and a
+  // Supabase user whose email is confirmed and exactly matches that membership.
+  if (path === '/api/auth/link-supabase' && req.method === 'POST') {
+    const accessAuth = await authenticate(req, env, options);
+    if (accessAuth.kind === 'unauthenticated') return fail(accessAuth.message, 401);
+    if (accessAuth.kind === 'forbidden') return fail(accessAuth.message, 403);
+    const supabaseUser = await getConfirmedSupabaseUser(req, env);
+    if (!supabaseUser || !supabaseUser.emailConfirmed) return fail('A valid, email-confirmed Supabase session is required', 401);
+    if (supabaseUser.email !== accessAuth.member.email.trim().toLowerCase()) return fail('Your Supabase email must match the existing verified staff account', 403);
+    const existing = await env.DB.prepare('SELECT supabase_user_id FROM memberships WHERE id = ? AND restaurant_id = ? LIMIT 1')
+      .bind(accessAuth.member.id, accessAuth.member.restaurant_id).first<{ supabase_user_id: string | null }>();
+    if (!existing) return fail('Staff membership not found', 404);
+    if (existing.supabase_user_id && existing.supabase_user_id !== supabaseUser.id) return fail('This staff membership is already linked to another Supabase account', 409);
+    const duplicate = await env.DB.prepare('SELECT id FROM memberships WHERE restaurant_id = ? AND supabase_user_id = ? AND id <> ? LIMIT 1')
+      .bind(accessAuth.member.restaurant_id, supabaseUser.id, accessAuth.member.id).first();
+    if (duplicate) return fail('This Supabase account is already linked to another staff membership in this restaurant', 409);
+    await env.DB.prepare("UPDATE memberships SET supabase_user_id = ? WHERE id = ? AND restaurant_id = ? AND (supabase_user_id IS NULL OR supabase_user_id = ?)")
+      .bind(supabaseUser.id, accessAuth.member.id, accessAuth.member.restaurant_id, supabaseUser.id).run();
+    return json({ ok: true, linked: true });
+  }
+
+  const auth: AuthOutcome = getBearerToken(req)
+    ? await authenticateWithSupabase(req, env)
+    : env.REQUIRE_SUPABASE_AUTH === 'true'
+      ? { kind: 'unauthenticated', message: 'Supabase authentication required' }
+      : await authenticate(req, env, options);
   if (auth.kind === 'unauthenticated') {
     return fail(auth.message, 401);
   }
