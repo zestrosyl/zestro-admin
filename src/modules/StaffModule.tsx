@@ -76,7 +76,7 @@ export const StaffModule: React.FC<{
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-neutral-500">
-          Manage Cloudflare Access team memberships, shift schedules, and role-based dashboard permissions.
+          Manage staff invitations, shift schedules, and role-based dashboard permissions. Share the Admin sign-in page with invitees; they must register with the listed email and confirm it before access is granted.
         </p>
         {canManageStaff && (
           <button
