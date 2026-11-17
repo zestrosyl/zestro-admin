@@ -41,7 +41,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
   const assertion = extractCfAccessToken(incoming);
   const authorization = incoming.headers.get('Authorization') || '';
-  const hasSupabaseBearer = /^Bearer\\s+\\S+$/i.test(authorization);
+  const hasSupabaseBearer = /^Bearer\s+\S+$/i.test(authorization);
   const isSupabaseLinkRequest = incomingUrl.pathname === '/api/auth/link-supabase';
 
   // First-time account linking requires the established Cloudflare Access identity.
