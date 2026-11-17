@@ -1,0 +1,29 @@
+name: Deploy ZESTRO Admin Auth Staging
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy-staging:
+    if: github.ref == 'refs/heads/feat/supabase-auth-integration-2026-11-17'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Worker dependencies
+        working-directory: worker
+        run: npm install --ignore-scripts
+      - name: Typecheck Worker
+        working-directory: worker
+        run: npm run typecheck
+      - name: Deploy isolated staging Worker
+        working-directory: worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: '11036ebf455f10d614a5b3c895eb5762'
+        run: npx wrangler deploy --env staging
