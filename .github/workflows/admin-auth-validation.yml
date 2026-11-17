@@ -14,6 +14,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Check out customer source for cross-repository regression tests
+        uses: actions/checkout@v4
+        with:
+          repository: zestrosyl/zestro-customer-website-
+          ref: live-backend/nov-14-2026
+          path: ../zestro-customer
       - uses: actions/setup-node@v4
         with:
           node-version: 22
