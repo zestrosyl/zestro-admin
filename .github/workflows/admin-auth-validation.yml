@@ -1,0 +1,42 @@
+name: Admin Supabase auth validation
+
+on:
+  push:
+    branches:
+      - feat/supabase-auth-integration-2026-11-17
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Generate root lockfile
+        run: npm install --package-lock-only --ignore-scripts
+      - name: Install root dependencies
+        run: npm ci
+      - name: Build admin frontend
+        run: npm run build
+      - name: Install Worker dependencies
+        run: npm --prefix worker install --ignore-scripts
+      - name: Typecheck admin Worker
+        run: npm run typecheck:api
+      - name: Run Worker tests
+        run: npm test
+      - name: Commit generated root lockfile
+        if: github.event_name == 'push'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package-lock.json
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: sync admin auth dependency lockfile"
+            git push
+          fi
