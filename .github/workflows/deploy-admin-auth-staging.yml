@@ -15,6 +15,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Check out customer source for cross-repository regression tests
+        uses: actions/checkout@v4
+        with:
+          repository: zestrosyl/zestro-customer-website-
+          ref: feat/supabase-auth-integration-2026-11-17
+          path: zestro-customer
+      - name: Expose customer source at the path used by cross-repository tests
+        run: ln -s "$GITHUB_WORKSPACE/zestro-customer" "$GITHUB_WORKSPACE/../zestro-customer"
       - uses: actions/setup-node@v4
         with:
           node-version: 22
