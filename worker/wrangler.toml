@@ -19,7 +19,7 @@ binding = "MEDIA"
 bucket_name = "zestro-media"
 
 [env.staging]
-name = "zestro-admin-api-supabase-staging"
+name = "zestro-admin-api-auth-staging"
 workers_dev = true
 
 [env.staging.vars]
