@@ -40,9 +40,15 @@ export const onRequest: PagesFunction<Env> = async (context) => {
   }
 
   const assertion = extractCfAccessToken(incoming);
-  if (!assertion) {
+  const authorization = incoming.headers.get('Authorization') || '';
+  const hasSupabaseBearer = /^Bearer\s+\S+$/i.test(authorization);
+  const isSupabaseLinkRequest = incomingUrl.pathname === '/api/auth/link-supabase';
+
+  // First-time account linking requires the established Cloudflare Access identity.
+  // Once linked, normal API requests can rely on Supabase JWT verification in the Worker.
+  if (!assertion && (!hasSupabaseBearer || isSupabaseLinkRequest)) {
     return Response.json(
-      { error: 'Admin sign-in required. Sign in to the ZESTRO Admin site via Cloudflare Access and refresh.' },
+      { error: 'A valid Supabase session is required. First-time staff linking also requires your existing Cloudflare Access session.' },
       { status: 401, headers: { 'cache-control': 'no-store' } }
     );
   }
@@ -56,7 +62,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
   headers.delete('host');
   headers.delete('cookie');
   headers.delete('origin');
-  headers.set('Cf-Access-Jwt-Assertion', assertion);
+  if (assertion) headers.set('Cf-Access-Jwt-Assertion', assertion);
+  else headers.delete('Cf-Access-Jwt-Assertion');
 
   const init: RequestInit = {
     method: incoming.method,

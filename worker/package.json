@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "scripts": {"dev":"wrangler dev","deploy":"wrangler deploy","typecheck":"tsc --noEmit","test":"node --test test/production-repair.test.mjs test/branding-offers.test.mjs test/trial-mvp.test.mjs"},
+  "scripts": {"dev":"wrangler dev","deploy":"wrangler deploy","typecheck":"tsc --noEmit","test":"node --test test/production-repair.test.mjs test/branding-offers.test.mjs test/trial-mvp.test.mjs test/supabase-auth.integration.test.mjs"},
   "dependencies": {"jose":"^5.9.6"},
   "devDependencies": {"@cloudflare/workers-types":"^4.20241127.0","typescript":"^5.6.3","wrangler":"^3.91.0"}
 }

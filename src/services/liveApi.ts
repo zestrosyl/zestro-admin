@@ -1,9 +1,18 @@
 import type { MediaAsset } from '../types';
 import { optimizeImageUpload } from '../utils/imageUpload';
+import { supabase } from '../lib/supabase';
 
 const viteEnv = (import.meta as unknown as { env?: Record<string, string | undefined> }).env;
 export const ADMIN_API_BASE = (viteEnv?.VITE_ADMIN_API_BASE || '').replace(/\/+$/, '');
 
+async function withSupabaseBearer(headers?: HeadersInit): Promise<Headers> {
+  const result = new Headers(headers);
+  if (supabase) {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.access_token) result.set('Authorization', 'Bearer ' + session.access_token);
+  }
+  return result;
+}
 export class AdminApiError extends Error {
   status: number;
   constructor(message: string, status: number) {
@@ -21,7 +30,7 @@ export async function adminApi<T = unknown>(
   const response = await fetch(`${ADMIN_API_BASE}${path}`, {
     method,
     credentials: 'same-origin',
-    headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
+    headers: await withSupabaseBearer(body === undefined ? undefined : { 'Content-Type': 'application/json' }),
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const data = await response.json().catch(() => ({} as Record<string, unknown>));
@@ -46,13 +55,13 @@ export async function uploadMediaToR2(
   const response = await fetch(`${ADMIN_API_BASE}/api/media`, {
     method: 'POST',
     credentials: 'same-origin',
-    headers: {
+    headers: await withSupabaseBearer({
       'Content-Type': optimized.mimeType,
       'x-file-name': encodeURIComponent(file.name),
       'x-title': encodeURIComponent(title),
       'x-folder': folder,
       'x-dimensions': `${optimized.width} × ${optimized.height}`,
-    },
+    }),
     body: optimized.blob,
   });
 
@@ -72,10 +81,10 @@ export async function replaceMediaInR2(assetId: string, file: File): Promise<Med
   const response = await fetch(`${ADMIN_API_BASE}/api/media/${encodeURIComponent(assetId)}`, {
     method: 'PUT',
     credentials: 'same-origin',
-    headers: {
+    headers: await withSupabaseBearer({
       'Content-Type': optimized.mimeType,
       'x-dimensions': `${optimized.width} × ${optimized.height}`,
-    },
+    }),
     body: optimized.blob,
   });
 

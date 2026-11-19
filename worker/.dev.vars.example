@@ -1,0 +1,4 @@
+# Copy to worker/.dev.vars for local development; do not commit real credentials.
+SUPABASE_URL=https://nwpwatonkvwrcjkfmtsm.supabase.co
+SUPABASE_PUBLISHABLE_KEY=sb_publishable_REPLACE_WITH_PROJECT_PUBLISHABLE_KEY
+REQUIRE_SUPABASE_AUTH=true
