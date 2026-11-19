@@ -42,12 +42,26 @@ jobs:
           cache-dependency-path: worker-public/package-lock.json
       - run: npm ci
       - name: Assert staging-only configuration
+        env:
+          STAGING_CUSTOMER_API_URL: ${{ vars.STAGING_CUSTOMER_API_URL }}
         shell: bash
         run: |
-          grep -q 'database_id = "db949199-24f0-4c8c-8694-c06f59168d62"' wrangler.toml
-          ! grep -q 'database_id = "7062f9eb-889b-46c1-87f4-03270a50b5b8"' <(sed -n '/\[env.staging\]/,$p' wrangler.toml)
-          test -n "${{ vars.STAGING_CUSTOMER_API_URL }}"
-          case "${{ vars.STAGING_CUSTOMER_API_URL }}" in *staging*) ;; *) echo "Refusing non-staging API URL"; exit 1;; esac
+          python3 - <<'PY'
+          import os, tomllib
+          from urllib.parse import urlsplit
+
+          with open('wrangler.toml', 'rb') as config:
+              staging = tomllib.load(config)['env']['staging']
+          bindings = [(b.get('binding'), b.get('database_id')) for b in staging['d1_databases']]
+          if staging.get('name') != 'zestro-customer-api-staging' or bindings != [('DB', 'db949199-24f0-4c8c-8694-c06f59168d62')]:
+              raise SystemExit('Refusing unexpected staging Worker or D1 binding')
+          url = urlsplit(os.environ['STAGING_CUSTOMER_API_URL'])
+          host = url.hostname or ''
+          if (url.scheme != 'https' or url.netloc != host or url.path not in ('', '/')
+              or url.query or url.fragment or len(host.split('.')) != 4
+              or not host.startswith('zestro-customer-api-staging.') or not host.endswith('.workers.dev')):
+              raise SystemExit('Refusing unexpected staging Worker URL')
+          PY
       - name: Run staging customer-auth HTTP integration tests
         env:
           STAGING_CUSTOMER_API_URL: ${{ vars.STAGING_CUSTOMER_API_URL }}
