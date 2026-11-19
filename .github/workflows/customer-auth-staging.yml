@@ -1,0 +1,69 @@
+name: Customer Authentication Staging Validation
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [live-backend/nov-14-2026]
+    paths:
+      - 'worker-public/**'
+      - 'worker/migrations/0003_customer_accounts.sql'
+      - 'worker/migrations/0004_customer_order_link.sql'
+      - '.github/workflows/customer-auth-staging.yml'
+
+jobs:
+  worker-typecheck:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: worker-public
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: worker-public/package-lock.json
+      - run: npm ci
+      - run: npx tsc --noEmit -p tsconfig.json
+
+  staging-integration:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: customer-auth-staging
+    defaults:
+      run:
+        working-directory: worker-public
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: worker-public/package-lock.json
+      - run: npm ci
+      - name: Assert staging-only configuration
+        env:
+          STAGING_CUSTOMER_API_URL: ${{ vars.STAGING_CUSTOMER_API_URL }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os, tomllib
+          from urllib.parse import urlsplit
+
+          with open('wrangler.toml', 'rb') as config:
+              staging = tomllib.load(config)['env']['staging']
+          bindings = [(b.get('binding'), b.get('database_id')) for b in staging['d1_databases']]
+          if staging.get('name') != 'zestro-customer-api-staging' or bindings != [('DB', 'db949199-24f0-4c8c-8694-c06f59168d62')]:
+              raise SystemExit('Refusing unexpected staging Worker or D1 binding')
+          url = urlsplit(os.environ['STAGING_CUSTOMER_API_URL'])
+          host = url.hostname or ''
+          if (url.scheme != 'https' or url.netloc != host or url.path not in ('', '/')
+              or url.query or url.fragment or len(host.split('.')) != 4
+              or not host.startswith('zestro-customer-api-staging.') or not host.endswith('.workers.dev')):
+              raise SystemExit('Refusing unexpected staging Worker URL')
+          PY
+      - name: Run staging customer-auth HTTP integration tests
+        env:
+          STAGING_CUSTOMER_API_URL: ${{ vars.STAGING_CUSTOMER_API_URL }}
+          STAGING_RESTAURANT_SLUG: zestro-customer-staging
+        run: node --test test/customer-auth.staging.test.mjs

@@ -6,6 +6,19 @@ export interface Env {
   WHATSAPP_NUMBER: string;
 }
 
+interface CustomerRow { id:string; restaurant_id:string; email:string; name:string; phone:string|null; default_address:string|null; password_hash:string; password_salt:string; }
+const CUSTOMER_COOKIE='zestro_customer_session';
+const PASSWORD_ITERATIONS=210000; const SESSION_DAYS=30; const encCustomer=new TextEncoder();
+function toB64Url(bytes:Uint8Array):string{return btoa(String.fromCharCode(...bytes)).replace(/=/g,'').replace(/\+/g,'-').replace(/\//g,'_');}
+function fromB64Url(raw:string):Uint8Array{return Uint8Array.from(atob(raw.replace(/-/g,'+').replace(/_/g,'/')+'='.repeat((4-raw.length%4)%4)),c=>c.charCodeAt(0));}
+async function sha256Customer(value:string):Promise<string>{const out=new Uint8Array(await crypto.subtle.digest('SHA-256',encCustomer.encode(value)));return [...out].map(v=>v.toString(16).padStart(2,'0')).join('');}
+async function deriveCustomerPassword(password:string,salt:Uint8Array):Promise<string>{const key=await crypto.subtle.importKey('raw',encCustomer.encode(password),'PBKDF2',false,['deriveBits']);const saltBuffer=new Uint8Array(salt).buffer;const raw=await crypto.subtle.deriveBits({name:'PBKDF2',hash:'SHA-256',salt:saltBuffer,iterations:PASSWORD_ITERATIONS},key,256);return toB64Url(new Uint8Array(raw));}
+function customerTokenFromCookie(req:Request):string|null{for(const part of (req.headers.get('Cookie')||'').split(';')){const [key,...value]=part.trim().split('=');if(key===CUSTOMER_COOKIE)return value.join('=')||null;}return null;}
+function customerSessionCookie(token:string,expires:Date):string{return CUSTOMER_COOKIE+'='+token+'; Path=/; HttpOnly; Secure; SameSite=None; Expires='+expires.toUTCString();}
+function customerPublic(row:CustomerRow){return {uid:row.id,email:row.email,displayName:row.name,phone:row.phone||'',defaultAddress:row.default_address||''};}
+function customerEmail(raw:string):string|null{const email=raw.trim().toLowerCase();return email.length<=200&&/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)?email:null;}
+async function getCustomerFromSession(req:Request,db:D1Database,restaurantId:string):Promise<CustomerRow|null>{const token=customerTokenFromCookie(req);if(!token||token.length>128)return null;return db.prepare('SELECT c.id,c.restaurant_id,c.email,c.name,c.phone,c.default_address,c.password_hash,c.password_salt FROM customer_sessions s JOIN customers c ON c.id=s.customer_id AND c.restaurant_id=s.restaurant_id WHERE s.token_hash=? AND s.restaurant_id=? AND s.expires_at>CURRENT_TIMESTAMP LIMIT 1').bind(await sha256Customer(token),restaurantId).first<CustomerRow>();}
+async function createCustomerSession(db:D1Database,restaurantId:string,customerId:string):Promise<{token:string;expires:Date}>{const token=toB64Url(crypto.getRandomValues(new Uint8Array(32)));const expires=new Date(Date.now()+SESSION_DAYS*86400000);await db.prepare('INSERT INTO customer_sessions(id,restaurant_id,customer_id,token_hash,expires_at) VALUES(?,?,?,?,?)').bind(uid(),restaurantId,customerId,await sha256Customer(token),expires.toISOString()).run();return {token,expires};}
 interface RestaurantRow {
   id: string;
   name: string;
@@ -32,8 +45,9 @@ function json(data: unknown, status = 200, origin: string | null = null, env?: E
   if (env && origin && parseAllowedOrigins(env).includes(origin)) {
     headers.set('access-control-allow-origin', origin);
     headers.set('vary', 'Origin');
+    headers.set('access-control-allow-credentials', 'true');
   }
-  headers.set('access-control-allow-methods', 'GET,POST,OPTIONS');
+  headers.set('access-control-allow-methods', 'GET,POST,PATCH,OPTIONS');
   headers.set('access-control-allow-headers', 'Content-Type,Idempotency-Key,X-Restaurant-Slug');
   return new Response(JSON.stringify(data), { status, headers });
 }
@@ -178,12 +192,13 @@ async function handle(req: Request, env: Env): Promise<Response> {
   const origin = req.headers.get('Origin');
   if (req.method === 'OPTIONS') {
     const h = new Headers({
-      'access-control-allow-methods': 'GET,POST,OPTIONS',
+      'access-control-allow-methods': 'GET,POST,PATCH,OPTIONS',
       'access-control-allow-headers': 'Content-Type,Idempotency-Key,X-Restaurant-Slug',
     });
     if (origin && parseAllowedOrigins(env).includes(origin)) {
       h.set('access-control-allow-origin', origin);
       h.set('vary', 'Origin');
+      h.set('access-control-allow-credentials', 'true');
     }
     return new Response(null, { status: 204, headers: h });
   }
@@ -202,6 +217,53 @@ async function handle(req: Request, env: Env): Promise<Response> {
   }
   const rid = restaurant.id;
 
+  // Customer account endpoints are scoped to the restaurant resolved above.
+  if (p === '/api/customer/auth/signup' && req.method === 'POST') {
+    const body=await req.json<Record<string,unknown>>();
+    const name=String(body.name||'').trim().slice(0,120), email=customerEmail(String(body.email||'')), password=String(body.password||'');
+    const phone=String(body.phone||'').trim().slice(0,24), address=String(body.defaultAddress||'').trim().slice(0,400);
+    if(!name||!email||password.length<12||password.length>128)return json(err('Enter your name, a valid email, and a password of 12–128 characters.'),400,origin,env);
+    const salt=crypto.getRandomValues(new Uint8Array(16)), passwordHash=await deriveCustomerPassword(password,salt), customerId=uid();
+    const token=toB64Url(crypto.getRandomValues(new Uint8Array(32))), expires=new Date(Date.now()+SESSION_DAYS*86400000), tokenHash=await sha256Customer(token);
+    try {
+      await env.DB.batch([
+        env.DB.prepare('INSERT INTO customers(id,restaurant_id,email,name,phone,default_address,password_hash,password_salt) VALUES(?,?,?,?,?,?,?,?)').bind(customerId,rid,email,name,phone||null,address||null,passwordHash,toB64Url(salt)),
+        env.DB.prepare('INSERT INTO customer_sessions(id,restaurant_id,customer_id,token_hash,expires_at) VALUES(?,?,?,?,?)').bind(uid(),rid,customerId,tokenHash,expires.toISOString())
+      ]);
+    } catch { return json(err('Unable to create account. This email may already be registered.'),409,origin,env); }
+    const response=json({customer:{uid:customerId,email,displayName:name,phone,defaultAddress:address}},201,origin,env);
+    const headers=new Headers(response.headers);headers.set('set-cookie',customerSessionCookie(token,expires));headers.set('access-control-allow-credentials','true');
+    return new Response(response.body,{status:201,headers});
+  }
+  if (p === '/api/customer/auth/login' && req.method === 'POST') {
+    const body=await req.json<Record<string,unknown>>(), email=customerEmail(String(body.email||'')), password=String(body.password||'');
+    if(!email||!password||password.length>128)return json(err('Invalid email or password.'),400,origin,env);
+    const customer=await env.DB.prepare('SELECT id,restaurant_id,email,name,phone,default_address,password_hash,password_salt FROM customers WHERE restaurant_id=? AND email=? LIMIT 1').bind(rid,email).first<CustomerRow>();
+    if(!customer)return json(err('Invalid email or password.'),401,origin,env);
+    const actual=new TextEncoder().encode(await deriveCustomerPassword(password,fromB64Url(customer.password_salt))), expected=new TextEncoder().encode(customer.password_hash);
+    let diff=actual.length^expected.length;for(let i=0;i<Math.min(actual.length,expected.length);i++)diff|=actual[i]^expected[i];
+    if(diff!==0)return json(err('Invalid email or password.'),401,origin,env);
+    const session=await createCustomerSession(env.DB,rid,customer.id), response=json({customer:customerPublic(customer)},200,origin,env), headers=new Headers(response.headers);
+    headers.set('set-cookie',customerSessionCookie(session.token,session.expires));headers.set('access-control-allow-credentials','true');return new Response(response.body,{status:200,headers});
+  }
+  if (p === '/api/customer/auth/logout' && req.method === 'POST') {
+    const token=customerTokenFromCookie(req);if(token)await env.DB.prepare('DELETE FROM customer_sessions WHERE restaurant_id=? AND token_hash=?').bind(rid,await sha256Customer(token)).run();
+    const response=json({ok:true},200,origin,env), headers=new Headers(response.headers);
+    headers.set('set-cookie',CUSTOMER_COOKIE+'=; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=0');headers.set('access-control-allow-credentials','true');return new Response(response.body,{status:200,headers});
+  }
+  if (p === '/api/customer/me' && req.method === 'GET') {
+    const customer=await getCustomerFromSession(req,env.DB,rid);if(!customer)return json(err('Not signed in.'),401,origin,env);
+    const orders=await env.DB.prepare('SELECT id,order_number,order_type,status,total_minor,created_at FROM orders WHERE restaurant_id=? AND customer_id=? ORDER BY created_at DESC LIMIT 50').bind(rid,customer.id).all<Record<string,unknown>>();
+    return json({customer:customerPublic(customer),orders:orders.results||[]},200,origin,env);
+  }
+  if (p === '/api/customer/profile' && req.method === 'PATCH') {
+    const customer=await getCustomerFromSession(req,env.DB,rid);if(!customer)return json(err('Not signed in.'),401,origin,env);
+    const body=await req.json<Record<string,unknown>>(), name=String(body.displayName||'').trim().slice(0,120), phone=String(body.phone||'').trim().slice(0,24), address=String(body.defaultAddress||'').trim().slice(0,400);
+    if(!name)return json(err('Name is required.'),400,origin,env);
+    await env.DB.prepare('UPDATE customers SET name=?,phone=?,default_address=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND restaurant_id=?').bind(name,phone||null,address||null,customer.id,rid).run();
+    const updated=await env.DB.prepare('SELECT id,restaurant_id,email,name,phone,default_address,password_hash,password_salt FROM customers WHERE id=? AND restaurant_id=?').bind(customer.id,rid).first<CustomerRow>();
+    return json({customer:updated?customerPublic(updated):customerPublic(customer)},200,origin,env);
+  }
   // ── Public R2 Media Stream (`GET /api/media?key=...`) ───────────────────
   if (p === '/api/media' && req.method === 'GET') {
     const key = url.searchParams.get('key') || '';
@@ -741,8 +803,9 @@ async function handle(req: Request, env: Env): Promise<Response> {
       }
     }
 
-    const name = String(b.customerName || '').trim();
-    const phone = String(b.customerPhone || '').trim();
+    const signedInCustomer = await getCustomerFromSession(req, env.DB, rid);
+    const name = String(b.customerName || signedInCustomer?.name || '').trim();
+    const phone = String(b.customerPhone || signedInCustomer?.phone || '').trim();
     const deliveryAddress = String(b.deliveryAddress || '').trim();
     if (!name || !phone) {
       return json(err('Customer name and phone number are required'), 400, origin, env);
@@ -1021,8 +1084,8 @@ async function handle(req: Request, env: Env): Promise<Response> {
            id, restaurant_id, order_number, table_id, customer_name, customer_phone,
            delivery_address, order_type, status, subtotal_minor, discount_minor,
            tax_minor, service_charge_minor, delivery_fee_minor, total_minor,
-           promo_code, customer_note, idempotency_key
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+           promo_code, customer_note, idempotency_key, customer_id
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).bind(
         orderId,
         rid,
@@ -1040,7 +1103,8 @@ async function handle(req: Request, env: Env): Promise<Response> {
         totalMinor,
         appliedPromoCode,
         customerNote,
-        finalIdempotencyKey
+        finalIdempotencyKey,
+        signedInCustomer?.id || null
       ),
       ...verifiedItems.map((item) =>
         env.DB.prepare(
